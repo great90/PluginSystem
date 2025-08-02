@@ -10,6 +10,17 @@
 #include "PluginInfo.h"
 #include "PluginExport.h"
 
+// Define PLUGIN_EXTENSION if not already defined
+#ifndef PLUGIN_EXTENSION
+    #if defined(_WIN32) || defined(_WIN64)
+        #define PLUGIN_EXTENSION ".dll"
+    #elif defined(__APPLE__)
+        #define PLUGIN_EXTENSION ".dylib"
+    #else
+        #define PLUGIN_EXTENSION ".so"
+    #endif
+#endif
+
 /**
  * @class IPlugin
  * @brief Interface that all plugins must implement

@@ -1,24 +1,7 @@
 # src/Plugins/ScriptPlugin/PythonPlugin/CMakeLists.txt
 
-# Include FetchContent for pybind11
-include(FetchContent)
-
-# Configure pybind11 build
-set(PYBIND11_TEST OFF CACHE BOOL "Build pybind11 tests" FORCE)
-
-# Download and build pybind11
-FetchContent_Declare(
-    pybind11
-    GIT_REPOSITORY https://github.com/pybind/pybind11.git
-    GIT_TAG v2.11.1
-    GIT_SHALLOW TRUE
-)
-
-# Make pybind11 available
-FetchContent_MakeAvailable(pybind11)
-
-# Find Python components
-find_package(Python COMPONENTS Interpreter Development REQUIRED)
+# Include Python build configuration file
+include(${CMAKE_CURRENT_SOURCE_DIR}/PythonBuild.cmake)
 
 # Define source files
 set(PYTHON_PLUGIN_SOURCES
@@ -46,7 +29,8 @@ target_include_directories(PythonPlugin
         $<INSTALL_INTERFACE:include>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
-        ${Python_INCLUDE_DIRS}
+        ${PYTHON_INCLUDE_DIRS}
+        ${PYBIND11_SOURCE_DIR}/include
 )
 
 # Link dependencies
@@ -54,12 +38,14 @@ target_link_libraries(PythonPlugin PRIVATE
     PluginCore
     ScriptPlugin
     MathPlugin
-    pybind11::pybind11
-    ${Python_LIBRARIES}
+    ${PYTHON_LIBRARIES}
 )
 
+# Add dependency to ensure python_lib is built before PythonPlugin
+add_dependencies(PythonPlugin python_lib)
+
 # Installation rules
-install(TARGETS PythonPlugin
+install(TARGETS PythonPlugin python_lib
     EXPORT PythonPluginTargets
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib

@@ -20,12 +20,7 @@ FetchContent_MakeAvailable(googletest)
 include_directories(${googletest_SOURCE_DIR}/googletest/include)
 
 # Define test sources
-set(TEST_SOURCES
-    PluginCoreTests.cpp
-    MathPluginTests.cpp
-    LogPluginTests.cpp
-    ScriptPluginTests.cpp
-)
+file(GLOB TEST_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
 
 # Add manual test executable
 add_executable(manual_test
