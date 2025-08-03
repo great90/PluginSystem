@@ -19,6 +19,9 @@
 #include <string>
 #include <random>
 
+// Begin math namespace
+namespace math {
+
 // Define Vector types using RTM
 typedef rtm::vector4f Vector2;
 typedef rtm::vector4f Vector3;
@@ -200,3 +203,5 @@ public:
         return pluginInfo_;
     }
 };
+
+} // namespace math

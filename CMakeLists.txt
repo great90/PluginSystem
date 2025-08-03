@@ -50,4 +50,5 @@ endif()
 
 # Installation rules
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/scripts/ DESTINATION scripts)
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/plugins/ DESTINATION plugins)
 install(FILES README.md DESTINATION .)

@@ -17,6 +17,8 @@
 #include <ctime>
 #include <iostream>
 
+namespace math {
+
 // Initialize static members
 MathPlugin* MathPlugin::instance_ = nullptr;
 
@@ -338,4 +340,6 @@ Vector3 MathPlugin::MatrixTransformVector(const Matrix4x4& m, const Vector3& v) 
 }
 
 // Register the plugin
-REGISTER_PLUGIN(MathPlugin)
+REGISTER_PLUGIN(math::MathPlugin)
+
+} // namespace math

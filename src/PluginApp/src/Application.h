@@ -12,8 +12,10 @@
 // Forward declarations
 class PluginManager;
 class LogPlugin;
-class MathPlugin;
 class ScriptPlugin;
+namespace math {
+	class MathPlugin;
+}
 
 /**
  * @class Application
@@ -61,7 +63,7 @@ private:
     std::unique_ptr<PluginManager> m_pluginManager;
     
     // Plugin instances (non-owning pointers)
-    MathPlugin* m_mathPlugin;
+    math::MathPlugin* m_mathPlugin;
     LogPlugin* m_logPlugin;
     ScriptPlugin* m_pythonPlugin;
     ScriptPlugin* m_luaPlugin;

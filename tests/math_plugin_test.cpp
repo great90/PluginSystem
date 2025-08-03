@@ -22,6 +22,8 @@
 #define PLUGIN_EXTENSION ".so"
 #endif
 
+using namespace math;
+
 // Test fixture for MathPlugin tests
 class MathPluginTest : public ::testing::Test {
 protected:

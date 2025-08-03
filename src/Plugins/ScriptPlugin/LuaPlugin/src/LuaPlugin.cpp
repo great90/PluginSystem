@@ -13,7 +13,8 @@
 #include <rtm/types.h>
 
 // Use Vector3 from MathPlugin
-using Vector3 = rtm::vector4f;
+using MathPlugin = math::MathPlugin;
+using Vector3 = math::Vector3;
 
 // Include Lua headers
 extern "C" {

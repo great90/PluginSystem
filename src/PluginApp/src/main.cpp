@@ -15,7 +15,7 @@
  */
 int main(int argc, char* argv[]) {
     // Set the plugin directory
-    std::string pluginDir = "../../bin/plugins";
+    std::string pluginDir = "./plugins";
     if (argc > 1) {
         pluginDir = argv[1];
     }

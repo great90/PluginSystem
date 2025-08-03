@@ -375,6 +375,8 @@ bool PythonPlugin::RegisterBuiltins() {
 
 bool PythonPlugin::RegisterMathFunctions() {
     try {
+        using namespace math;
+
         py::gil_scoped_acquire gil;
         
         // Create a math module

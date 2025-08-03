@@ -12,7 +12,6 @@
 #include "LuaPlugin.h"
 #include <iostream>
 #include <filesystem>
-#include <rtm/types.h>
 
 // Use Vector3 from MathPlugin
 using Vector3 = rtm::vector4f;
@@ -64,7 +63,7 @@ bool Application::Initialize() {
     }
     
     // Get specific plugin instances
-    m_mathPlugin = static_cast<MathPlugin*>(m_pluginManager->GetPlugin("MathPlugin"));
+    m_mathPlugin = static_cast<math::MathPlugin*>(m_pluginManager->GetPlugin("MathPlugin"));
     m_logPlugin = static_cast<LogPlugin*>(m_pluginManager->GetPlugin("LogPlugin"));
     m_pythonPlugin = static_cast<PythonPlugin*>(m_pluginManager->GetPlugin("PythonPlugin"));
     m_luaPlugin = static_cast<LuaPlugin*>(m_pluginManager->GetPlugin("LuaPlugin"));
@@ -119,6 +118,8 @@ void Application::PrintPluginInfo(const PluginInfo& info) {
 }
 
 void Application::DemonstrateMathPlugin() {
+    using namespace math;
+
     if (!m_mathPlugin) {
         std::cerr << "Math plugin not available" << std::endl;
         return;
