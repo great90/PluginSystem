@@ -8,18 +8,27 @@
 #include "IPlugin.h"
 #include "PluginInfo.h"
 #include "MathPluginExport.h"
-#include "Vector2.h"
-#include "Vector3.h"
-#include "Vector4.h"
-#include "Matrix4x4.h"
-#include "Quaternion.h"
+
+// Include Realtime Math (RTM) headers
+#include <rtm/types.h>
+#include <rtm/vector4f.h>
+#include <rtm/quatf.h>
+#include <rtm/matrix3x3f.h>
+#include <rtm/matrix4x4f.h>
 
 #include <string>
 #include <random>
 
+// Define Vector types using RTM
+typedef rtm::vector4f Vector2;
+typedef rtm::vector4f Vector3;
+typedef rtm::vector4f Vector4;
+typedef rtm::matrix4x4f Matrix4x4;
+typedef rtm::quatf Quaternion;
+
 /**
  * @class MathPlugin
- * @brief Plugin that provides mathematical operations and structures
+ * @brief Plugin that provides mathematical operations and structures using Realtime Math library
  */
 class MATH_PLUGIN_API MathPlugin : public IPlugin {
 public:
@@ -123,8 +132,61 @@ public:
      */
     int RandomInt(int min, int max) const;
 
+    // Helper functions for Vector2 (using RTM vector4f)
+    Vector2 MakeVector2(float x, float y) const;
+    float GetVector2X(const Vector2& v) const;
+    float GetVector2Y(const Vector2& v) const;
+    void SetVector2X(Vector2& v, float x) const;
+    void SetVector2Y(Vector2& v, float y) const;
+    
+    // Helper functions for Vector3 (using RTM vector4f)
+    Vector3 MakeVector3(float x, float y, float z) const;
+    float GetVector3X(const Vector3& v) const;
+    float GetVector3Y(const Vector3& v) const;
+    float GetVector3Z(const Vector3& v) const;
+    
+    // Aliases for GetVector3X/Y/Z for compatibility with tests
+    float GetX(const Vector3& v) const { return GetVector3X(v); }
+    float GetY(const Vector3& v) const { return GetVector3Y(v); }
+    float GetZ(const Vector3& v) const { return GetVector3Z(v); }
+    void SetVector3X(Vector3& v, float x) const;
+    void SetVector3Y(Vector3& v, float y) const;
+    void SetVector3Z(Vector3& v, float z) const;
+    
+    // Additional Vector3 operations for Python bindings
+    static Vector3 CreateVector3(float x, float y, float z);
+    static void GetVector3Components(const Vector3& v, float& x, float& y, float& z);
+    static Vector3 Vector3Add(const Vector3& a, const Vector3& b);
+    static Vector3 Vector3Subtract(const Vector3& a, const Vector3& b);
+    static float Vector3Dot(const Vector3& a, const Vector3& b);
+    static Vector3 Vector3Cross(const Vector3& a, const Vector3& b);
+    static float Vector3Length(const Vector3& v);
+    static Vector3 Vector3Normalize(const Vector3& v);
+    
+    // Helper functions for Quaternion (using RTM quatf)
+    Quaternion MakeQuaternion(float x, float y, float z, float w) const;
+    Quaternion QuaternionFromAxisAngle(const Vector3& axis, float angle) const;
+    Quaternion QuaternionFromEulerAngles(float pitch, float yaw, float roll) const;
+    float GetQuaternionX(const Quaternion& q) const;
+    float GetQuaternionY(const Quaternion& q) const;
+    float GetQuaternionZ(const Quaternion& q) const;
+    float GetQuaternionW(const Quaternion& q) const;
+    Vector3 QuaternionRotateVector(const Quaternion& q, const Vector3& v) const;
+    Quaternion QuaternionMultiply(const Quaternion& a, const Quaternion& b) const;
+    
+    // Helper functions for Matrix4x4 (using RTM matrix4x4f)
+    Matrix4x4 MakeTranslationMatrix(const Vector3& translation) const;
+    Matrix4x4 MakeScalingMatrix(const Vector3& scale) const;
+    Matrix4x4 MakeRotationXMatrix(float angle) const;
+    Matrix4x4 MakeRotationYMatrix(float angle) const;
+    Matrix4x4 MakeRotationZMatrix(float angle) const;
+    Matrix4x4 MatrixMultiply(const Matrix4x4& a, const Matrix4x4& b) const;
+    Vector3 MatrixTransformVector(const Matrix4x4& m, const Vector3& v) const;
+
 private:
     static MathPlugin* instance_;
+    mutable std::mt19937 rng_;
+    mutable std::uniform_real_distribution<float> dist_;
 
 public:
     static PluginInfo pluginInfo_;

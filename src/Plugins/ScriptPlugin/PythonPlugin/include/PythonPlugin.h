@@ -15,6 +15,11 @@
 typedef struct _object PyObject;
 typedef struct _ts PyThreadState;
 
+namespace pybind11 {
+    class module_;
+    class dict;
+}
+
 /**
  * @class PythonPlugin
  * @brief Plugin for executing Python scripts and integrating with Python interpreter
@@ -118,20 +123,6 @@ public:
     bool FromPython(PyObject* object, T& value);
     
     /**
-     * @brief Get the Python interpreter's main module
-     * 
-     * @return Pointer to the main module
-     */
-    PyObject* GetMainModule() const;
-    
-    /**
-     * @brief Get the Python interpreter's main namespace
-     * 
-     * @return Pointer to the main namespace dictionary
-     */
-    PyObject* GetMainNamespace() const;
-    
-    /**
      * @brief Register a C++ class with Python
      * 
      * @tparam T Type of the C++ class
@@ -175,8 +166,8 @@ private:
      */
     bool RegisterMathFunctions();
     
-    PyObject* mainModule_;      ///< Python's __main__ module
-    PyObject* mainNamespace_;   ///< Python's __main__ module namespace
+    pybind11::module_* mainModule_;      ///< Python's __main__ module
+    pybind11::dict* mainNamespace_;   ///< Python's __main__ module namespace
     PyThreadState* threadState_; ///< Python thread state
     bool initialized_;          ///< Whether the Python interpreter is initialized
     

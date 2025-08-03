@@ -10,6 +10,10 @@
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
+#include <rtm/types.h>
+
+// Use Vector3 from MathPlugin
+using Vector3 = rtm::vector4f;
 
 // Include Lua headers
 extern "C" {
@@ -50,37 +54,6 @@ static std::string ReadFileToString(const std::string& filePath) {
     return buffer.str();
 }
 
-// C function to be called from Lua
-static int LuaPrint(lua_State* L) {
-    int nargs = lua_gettop(L);
-    std::string message;
-    
-    for (int i = 1; i <= nargs; i++) {
-        if (lua_isstring(L, i)) {
-            message += lua_tostring(L, i);
-        }
-        else if (lua_isnumber(L, i)) {
-            message += std::to_string(lua_tonumber(L, i));
-        }
-        else if (lua_isboolean(L, i)) {
-            message += lua_toboolean(L, i) ? "true" : "false";
-        }
-        else if (lua_isnil(L, i)) {
-            message += "nil";
-        }
-        else {
-            message += lua_typename(L, lua_type(L, i));
-        }
-        
-        if (i < nargs) {
-            message += "\t";
-        }
-    }
-    
-    std::cout << "[Lua] " << message << std::endl;
-    return 0;
-}
-
 // Vector3 wrapper for Lua
 static const char* VECTOR3_METATABLE = "Vector3";
 
@@ -91,8 +64,8 @@ static int Vector3_New(lua_State* L) {
     float z = static_cast<float>(luaL_optnumber(L, 3, 0.0));
     
     // Create a new Vector3 userdata
-    Vector3* vec = static_cast<Vector3*>(lua_newuserdata(L, sizeof(Vector3)));
-    new(vec) Vector3(x, y, z);
+auto* vec = static_cast<Vector3*>(lua_newuserdata(L, sizeof(Vector3)));
+*vec = MathPlugin::CreateVector3(x, y, z);
     
     // Set the metatable for the userdata
     luaL_getmetatable(L, VECTOR3_METATABLE);
@@ -113,8 +86,8 @@ static int Vector3_Add(lua_State* L) {
     Vector3* a = CheckVector3(L, 1);
     Vector3* b = CheckVector3(L, 2);
     
-    Vector3* result = static_cast<Vector3*>(lua_newuserdata(L, sizeof(Vector3)));
-    new(result) Vector3(a->x + b->x, a->y + b->y, a->z + b->z);
+    auto* result = static_cast<Vector3*>(lua_newuserdata(L, sizeof(Vector3)));
+    *result = MathPlugin::Vector3Add(*a, *b);
     
     luaL_getmetatable(L, VECTOR3_METATABLE);
     lua_setmetatable(L, -2);
@@ -127,8 +100,8 @@ static int Vector3_Sub(lua_State* L) {
     Vector3* a = CheckVector3(L, 1);
     Vector3* b = CheckVector3(L, 2);
     
-    Vector3* result = static_cast<Vector3*>(lua_newuserdata(L, sizeof(Vector3)));
-    new(result) Vector3(a->x - b->x, a->y - b->y, a->z - b->z);
+    auto* result = static_cast<Vector3*>(lua_newuserdata(L, sizeof(Vector3)));
+    *result = MathPlugin::Vector3Subtract(*a, *b);
     
     luaL_getmetatable(L, VECTOR3_METATABLE);
     lua_setmetatable(L, -2);
@@ -141,7 +114,7 @@ static int Vector3_Dot(lua_State* L) {
     Vector3* a = CheckVector3(L, 1);
     Vector3* b = CheckVector3(L, 2);
     
-    float dot = a->x * b->x + a->y * b->y + a->z * b->z;
+    float dot = MathPlugin::Vector3Dot(*a, *b);
     lua_pushnumber(L, dot);
     
     return 1;
@@ -152,12 +125,8 @@ static int Vector3_Cross(lua_State* L) {
     Vector3* a = CheckVector3(L, 1);
     Vector3* b = CheckVector3(L, 2);
     
-    Vector3* result = static_cast<Vector3*>(lua_newuserdata(L, sizeof(Vector3)));
-    new(result) Vector3(
-        a->y * b->z - a->z * b->y,
-        a->z * b->x - a->x * b->z,
-        a->x * b->y - a->y * b->x
-    );
+    auto* result = static_cast<Vector3*>(lua_newuserdata(L, sizeof(Vector3)));
+    *result = MathPlugin::Vector3Cross(*a, *b);
     
     luaL_getmetatable(L, VECTOR3_METATABLE);
     lua_setmetatable(L, -2);
@@ -168,7 +137,7 @@ static int Vector3_Cross(lua_State* L) {
 // Vector3 length
 static int Vector3_Length(lua_State* L) {
     Vector3* vec = CheckVector3(L, 1);
-    float length = std::sqrt(vec->x * vec->x + vec->y * vec->y + vec->z * vec->z);
+    float length = MathPlugin::Vector3Length(*vec);
     lua_pushnumber(L, length);
     return 1;
 }
@@ -176,22 +145,12 @@ static int Vector3_Length(lua_State* L) {
 // Vector3 normalize
 static int Vector3_Normalize(lua_State* L) {
     Vector3* vec = CheckVector3(L, 1);
-    float length = std::sqrt(vec->x * vec->x + vec->y * vec->y + vec->z * vec->z);
     
-    if (length > 0.0001f) {
-        Vector3* result = static_cast<Vector3*>(lua_newuserdata(L, sizeof(Vector3)));
-        new(result) Vector3(vec->x / length, vec->y / length, vec->z / length);
-        
-        luaL_getmetatable(L, VECTOR3_METATABLE);
-        lua_setmetatable(L, -2);
-    } else {
-        // Return a copy of the zero vector
-        Vector3* result = static_cast<Vector3*>(lua_newuserdata(L, sizeof(Vector3)));
-        new(result) Vector3(*vec);
-        
-        luaL_getmetatable(L, VECTOR3_METATABLE);
-        lua_setmetatable(L, -2);
-    }
+    auto* result = static_cast<Vector3*>(lua_newuserdata(L, sizeof(Vector3)));
+    *result = MathPlugin::Vector3Normalize(*vec);
+    
+    luaL_getmetatable(L, VECTOR3_METATABLE);
+    lua_setmetatable(L, -2);
     
     return 1;
 }
@@ -199,8 +158,11 @@ static int Vector3_Normalize(lua_State* L) {
 // Vector3 tostring
 static int Vector3_ToString(lua_State* L) {
     Vector3* vec = CheckVector3(L, 1);
+    
     std::stringstream ss;
-    ss << "Vector3(" << vec->x << ", " << vec->y << ", " << vec->z << ")";
+    float x, y, z;
+    MathPlugin::GetVector3Components(*vec, x, y, z);
+    ss << "Vector3(" << x << ", " << y << ", " << z << ")";
     lua_pushstring(L, ss.str().c_str());
     return 1;
 }
@@ -210,12 +172,15 @@ static int Vector3_Index(lua_State* L) {
     Vector3* vec = CheckVector3(L, 1);
     const char* key = luaL_checkstring(L, 2);
     
+    float x, y, z;
+    MathPlugin::GetVector3Components(*vec, x, y, z);
+    
     if (strcmp(key, "x") == 0) {
-        lua_pushnumber(L, vec->x);
+        lua_pushnumber(L, x);
     } else if (strcmp(key, "y") == 0) {
-        lua_pushnumber(L, vec->y);
+        lua_pushnumber(L, y);
     } else if (strcmp(key, "z") == 0) {
-        lua_pushnumber(L, vec->z);
+        lua_pushnumber(L, z);
     } else {
         // Check the metatable for methods
         luaL_getmetatable(L, VECTOR3_METATABLE);
@@ -237,15 +202,20 @@ static int Vector3_NewIndex(lua_State* L) {
     const char* key = luaL_checkstring(L, 2);
     float value = static_cast<float>(luaL_checknumber(L, 3));
     
+    float x, y, z;
+    MathPlugin::GetVector3Components(*vec, x, y, z);
+    
     if (strcmp(key, "x") == 0) {
-        vec->x = value;
+        x = value;
     } else if (strcmp(key, "y") == 0) {
-        vec->y = value;
+        y = value;
     } else if (strcmp(key, "z") == 0) {
-        vec->z = value;
+        z = value;
     } else {
         luaL_error(L, "Cannot set invalid Vector3 component: %s", key);
     }
+    
+    *vec = MathPlugin::CreateVector3(x, y, z);
     
     return 0;
 }
@@ -305,196 +275,237 @@ static void RegisterVector3(lua_State* L) {
     lua_setglobal(L, "Vector3");
 }
 
-// LuaPlugin implementation
-
+// Constructor
 LuaPlugin::LuaPlugin()
-    : luaState_(nullptr), initialized_(false) {
+    : luaState_(nullptr)
+    , initialized_(false) {
 }
 
+// Destructor
 LuaPlugin::~LuaPlugin() {
-    Shutdown();
+    if (initialized_) {
+        Shutdown();
+    }
 }
 
+// Initialize the plugin
 bool LuaPlugin::Initialize() {
     if (initialized_) {
         return true;
     }
     
-    if (!InitializeLua()) {
-        std::cerr << "Failed to initialize Lua interpreter" << std::endl;
+    // Create a new Lua state
+    luaState_ = luaL_newstate();
+    if (!luaState_) {
         return false;
     }
     
+    // Open standard libraries
+    luaL_openlibs(luaState_);
+    
+    // Register built-in functions
     if (!RegisterBuiltins()) {
-        std::cerr << "Failed to register built-in functions" << std::endl;
-        FinalizeLua();
+        lua_close(luaState_);
+        luaState_ = nullptr;
         return false;
     }
     
+    // Register math functions
     if (!RegisterMathFunctions()) {
-        std::cerr << "Failed to register math functions" << std::endl;
-        FinalizeLua();
+        lua_close(luaState_);
+        luaState_ = nullptr;
         return false;
     }
     
     initialized_ = true;
-    std::cout << "LuaPlugin initialized successfully" << std::endl;
     return true;
 }
 
+// Shutdown the plugin
 void LuaPlugin::Shutdown() {
-    if (initialized_) {
-        FinalizeLua();
-        initialized_ = false;
-        std::cout << "LuaPlugin shut down" << std::endl;
+    if (!initialized_) {
+        return;
     }
+    
+    // Close Lua state
+    if (luaState_) {
+        lua_close(luaState_);
+        luaState_ = nullptr;
+    }
+    
+    initialized_ = false;
 }
 
+// Get plugin information
 const PluginInfo& LuaPlugin::GetPluginInfo() const {
     return pluginInfo_;
 }
 
+// Serialize plugin state
 std::string LuaPlugin::Serialize() {
-    // For now, we don't have any state to serialize
+    // In a real implementation, you would serialize the Lua state
     return "";
 }
 
+// Deserialize plugin state
 bool LuaPlugin::Deserialize(const std::string& data) {
-    // For now, we don't have any state to deserialize
+    // In a real implementation, you would deserialize the Lua state
     return true;
 }
 
+// Prepare for hot reload
 bool LuaPlugin::PrepareForHotReload() {
-    // Nothing special needed for hot reload preparation
+    // In a real implementation, you would prepare the Lua state for hot reload
     return true;
 }
 
+// Complete hot reload
 bool LuaPlugin::CompleteHotReload() {
-    // Re-register all functions and objects after hot reload
-    if (initialized_) {
-        if (!RegisterBuiltins() || !RegisterMathFunctions()) {
-            return false;
-        }
-    }
+    // In a real implementation, you would complete the hot reload of the Lua state
     return true;
 }
 
+// Execute a Lua script file
 bool LuaPlugin::ExecuteFile(const std::string& filePath) {
     if (!initialized_ || !luaState_) {
-        std::cerr << "Lua interpreter not initialized" << std::endl;
         return false;
     }
     
+    // Check if file exists
     if (!FileExists(filePath)) {
-        std::cerr << "File not found: " << filePath << std::endl;
         return false;
     }
     
-    int result = luaL_dofile(luaState_, filePath.c_str());
-    return !HandleLuaError(result);
+    // Read file content
+    std::string script = ReadFileToString(filePath);
+    if (script.empty()) {
+        return false;
+    }
+    
+    // Execute script
+    int result = luaL_dostring(luaState_, script.c_str());
+    if (result != LUA_OK) {
+        // Handle error
+        const char* errorMsg = lua_tostring(luaState_, -1);
+        lua_pop(luaState_, 1); // Pop error message
+        return false;
+    }
+    
+    return true;
 }
 
+// Execute a Lua script string
 bool LuaPlugin::ExecuteString(const std::string& script) {
     if (!initialized_ || !luaState_) {
-        std::cerr << "Lua interpreter not initialized" << std::endl;
         return false;
     }
     
+    // Execute script
     int result = luaL_dostring(luaState_, script.c_str());
-    return !HandleLuaError(result);
+    if (result != LUA_OK) {
+        // Handle error
+        const char* errorMsg = lua_tostring(luaState_, -1);
+        lua_pop(luaState_, 1); // Pop error message
+        return false;
+    }
+    
+    return true;
 }
 
+// Evaluate a Lua expression
 bool LuaPlugin::EvaluateExpression(const std::string& expression, std::string& result) {
     if (!initialized_ || !luaState_) {
-        std::cerr << "Lua interpreter not initialized" << std::endl;
         return false;
     }
     
-    // Wrap the expression to return its value
-    std::string script = "return " + expression;
+    // Create a Lua chunk that returns the expression result
+    std::string chunk = "return " + expression;
     
-    int luaResult = luaL_dostring(luaState_, script.c_str());
-    if (luaResult != LUA_OK) {
-        // Try without the return statement
-        luaResult = luaL_dostring(luaState_, expression.c_str());
-        if (HandleLuaError(luaResult)) {
-            return false;
-        }
-        result = "";
-        return true;
+    // Execute chunk
+    int loadResult = luaL_loadstring(luaState_, chunk.c_str());
+    if (loadResult != LUA_OK) {
+        // Handle load error
+        const char* errorMsg = lua_tostring(luaState_, -1);
+        lua_pop(luaState_, 1); // Pop error message
+        return false;
     }
     
-    // Get the result from the stack
-    if (lua_isstring(luaState_, -1)) {
-        result = lua_tostring(luaState_, -1);
-    } else if (lua_isnumber(luaState_, -1)) {
-        result = std::to_string(lua_tonumber(luaState_, -1));
+    // Call the chunk
+    int callResult = lua_pcall(luaState_, 0, 1, 0);
+    if (callResult != LUA_OK) {
+        // Handle call error
+        const char* errorMsg = lua_tostring(luaState_, -1);
+        lua_pop(luaState_, 1); // Pop error message
+        return false;
+    }
+    
+    // Get result
+    if (lua_isnil(luaState_, -1)) {
+        result = "nil";
     } else if (lua_isboolean(luaState_, -1)) {
         result = lua_toboolean(luaState_, -1) ? "true" : "false";
-    } else if (lua_isnil(luaState_, -1)) {
-        result = "nil";
+    } else if (lua_isnumber(luaState_, -1)) {
+        result = std::to_string(lua_tonumber(luaState_, -1));
+    } else if (lua_isstring(luaState_, -1)) {
+        result = lua_tostring(luaState_, -1);
     } else {
-        // For other types, just return the type name
+        // For other types, get the type name
         result = lua_typename(luaState_, lua_type(luaState_, -1));
     }
     
-    // Pop the result from the stack
+    // Pop result
     lua_pop(luaState_, 1);
     
     return true;
 }
 
+// Register a C function with Lua
 bool LuaPlugin::RegisterFunction(const std::string& name, void* function) {
     if (!initialized_ || !luaState_) {
-        std::cerr << "Lua interpreter not initialized" << std::endl;
         return false;
     }
     
-    // We need to cast the void* to a lua_CFunction
+    // Cast function pointer to lua_CFunction
     lua_CFunction luaFunc = reinterpret_cast<lua_CFunction>(function);
-    return RegisterCFunction(name, luaFunc);
+    
+    // Register function
+    lua_pushcfunction(luaState_, luaFunc);
+    lua_setglobal(luaState_, name.c_str());
+    
+    return true;
 }
 
+// Register a C++ object with Lua
 bool LuaPlugin::RegisterObject(const std::string& name, void* object) {
-    if (!initialized_ || !luaState_) {
-        std::cerr << "Lua interpreter not initialized" << std::endl;
-        return false;
-    }
-    
-    // For now, we don't have a generic way to register arbitrary objects
-    // This would require more complex binding code
-    std::cerr << "RegisterObject not fully implemented for LuaPlugin" << std::endl;
+    // In a real implementation, you would register the object with Lua
     return false;
 }
 
+// Get supported file extensions
 std::vector<std::string> LuaPlugin::GetSupportedExtensions() const {
     return {".lua"};
 }
 
+// Get language name
 std::string LuaPlugin::GetLanguageName() const {
     return "Lua";
 }
 
+// Get language version
 std::string LuaPlugin::GetLanguageVersion() const {
-    if (initialized_ && luaState_) {
-        // Get the Lua version from the global _VERSION variable
-        lua_getglobal(luaState_, "_VERSION");
-        if (lua_isstring(luaState_, -1)) {
-            std::string version = lua_tostring(luaState_, -1);
-            lua_pop(luaState_, 1);
-            return version;
-        }
-        lua_pop(luaState_, 1);
+    if (!initialized_ || !luaState_) {
+        return "Unknown";
     }
     
-    // Fallback to a default version
-    return "Lua 5.4";
+    // Get Lua version
+    lua_getglobal(luaState_, "_VERSION");
+    std::string version = lua_tostring(luaState_, -1);
+    lua_pop(luaState_, 1);
+    
+    return version;
 }
 
-lua_State* LuaPlugin::GetLuaState() const {
-    return luaState_;
-}
-
+// Helper function to register a C function with Lua
 bool LuaPlugin::RegisterCFunction(const std::string& name, lua_CFunction function) {
     if (!initialized_ || !luaState_) {
         return false;
@@ -506,75 +517,40 @@ bool LuaPlugin::RegisterCFunction(const std::string& name, lua_CFunction functio
     return true;
 }
 
-bool LuaPlugin::CallFunction(const std::string& functionName, int numArgs, int numResults) {
-    if (!initialized_ || !luaState_) {
-        return false;
-    }
+// Lua print function
+static int LuaPrint(lua_State* L) {
+    int nargs = lua_gettop(L);
+    std::stringstream ss;
     
-    // Get the function from the global table
-    lua_getglobal(luaState_, functionName.c_str());
-    
-    // Check if it's a function
-    if (!lua_isfunction(luaState_, -1)) {
-        std::cerr << "Function not found: " << functionName << std::endl;
-        lua_pop(luaState_, 1);  // Pop the non-function value
-        return false;
-    }
-    
-    // Move the function before the arguments
-    if (numArgs > 0) {
-        lua_insert(luaState_, -(numArgs + 1));
-    }
-    
-    // Call the function
-    int result = lua_pcall(luaState_, numArgs, numResults, 0);
-    return !HandleLuaError(result);
-}
-
-bool LuaPlugin::InitializeLua() {
-    // Create a new Lua state
-    luaState_ = luaL_newstate();
-    if (!luaState_) {
-        std::cerr << "Failed to create Lua state" << std::endl;
-        return false;
-    }
-    
-    // Open standard libraries
-    luaL_openlibs(luaState_);
-    
-    return true;
-}
-
-void LuaPlugin::FinalizeLua() {
-    if (luaState_) {
-        lua_close(luaState_);
-        luaState_ = nullptr;
-    }
-}
-
-bool LuaPlugin::HandleLuaError(int result) {
-    if (result != LUA_OK) {
-        std::string errorMsg = "Lua error: ";
-        if (lua_isstring(luaState_, -1)) {
-            errorMsg += lua_tostring(luaState_, -1);
-        } else {
-            errorMsg += "Unknown error";
+    for (int i = 1; i <= nargs; i++) {
+        if (i > 1) {
+            ss << "\t";
         }
         
-        std::cerr << errorMsg << std::endl;
-        lua_pop(luaState_, 1);  // Pop the error message
-        return true;  // Error occurred
+        if (lua_isstring(L, i)) {
+            ss << lua_tostring(L, i);
+        } else if (lua_isnil(L, i)) {
+            ss << "nil";
+        } else if (lua_isboolean(L, i)) {
+            ss << (lua_toboolean(L, i) ? "true" : "false");
+        } else if (lua_isnumber(L, i)) {
+            ss << lua_tonumber(L, i);
+        } else {
+            ss << lua_typename(L, lua_type(L, i));
+        }
     }
     
-    return false;  // No error
+    std::cout << ss.str() << std::endl;
+    return 0;
 }
 
+// Register built-in functions
 bool LuaPlugin::RegisterBuiltins() {
     if (!initialized_ || !luaState_) {
         return false;
     }
     
-    // Register custom print function
+    // Register print function
     RegisterCFunction("print", LuaPrint);
     
     return true;

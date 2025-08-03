@@ -31,6 +31,7 @@ target_include_directories(PythonPlugin
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${PYTHON_INCLUDE_DIRS}
         ${PYBIND11_SOURCE_DIR}/include
+        ${rtm_SOURCE_DIR}/includes
 )
 
 # Link dependencies

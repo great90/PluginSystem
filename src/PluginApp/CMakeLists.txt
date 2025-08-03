@@ -15,7 +15,10 @@ set(PLUGIN_APP_HEADERS
 add_executable(PluginApp ${PLUGIN_APP_SOURCES} ${PLUGIN_APP_HEADERS})
 
 # Set include directories
-target_include_directories(PluginApp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_include_directories(PluginApp PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${rtm_SOURCE_DIR}/includes
+)
 
 # Link dependencies
 target_link_libraries(PluginApp PRIVATE

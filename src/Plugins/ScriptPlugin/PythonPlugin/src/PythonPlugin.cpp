@@ -10,7 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
-#include "Vector3.h"
+#include "MathPlugin.h"
 
 // For convenience
 namespace py = pybind11;
@@ -83,24 +83,22 @@ const PluginInfo& PythonPlugin::GetPluginInfo() const {
 }
 
 std::string PythonPlugin::Serialize() {
-    // For Python plugin, we don't have much state to serialize
-    // In a real implementation, you might want to serialize loaded modules,
-    // global variables, etc.
-    return "{}";
+    // In a real implementation, you would serialize the Python state
+    return "";
 }
 
 bool PythonPlugin::Deserialize(const std::string& data) {
-    // For Python plugin, we don't have much state to deserialize
+    // In a real implementation, you would deserialize the Python state
     return true;
 }
 
 bool PythonPlugin::PrepareForHotReload() {
-    // Nothing special needed for hot reload preparation
+    // In a real implementation, you would prepare the Python state for hot reload
     return true;
 }
 
 bool PythonPlugin::CompleteHotReload() {
-    // Nothing special needed for hot reload completion
+    // In a real implementation, you would complete the hot reload of the Python state
     return true;
 }
 
@@ -110,32 +108,18 @@ bool PythonPlugin::ExecuteFile(const std::string& filePath) {
     }
     
     try {
+        py::gil_scoped_acquire gil;
+        
         // Check if file exists
         if (!fs::exists(filePath)) {
             return false;
         }
         
-        // Read file content
-        std::ifstream file(filePath);
-        if (!file.is_open()) {
-            return false;
-        }
-        
-        std::stringstream buffer;
-        buffer << file.rdbuf();
-        std::string script = buffer.str();
-        
-        // Execute the script
-        py::gil_scoped_acquire gil;
-        py::exec(script, py::globals(), py::globals());
-        
+        // Execute the file
+        py::eval_file(filePath, *mainNamespace_);
         return true;
-    } catch (const py::error_already_set& e) {
-        // Handle Python exception
-        HandlePythonError();
-        return false;
     } catch (const std::exception& e) {
-        // Handle C++ exception
+        // Handle exception
         return false;
     }
 }
@@ -147,12 +131,12 @@ bool PythonPlugin::ExecuteString(const std::string& script) {
     
     try {
         py::gil_scoped_acquire gil;
-        py::exec(script, py::globals(), py::globals());
+        
+        // Execute the script
+        py::exec(script, *mainNamespace_);
         return true;
-    } catch (const py::error_already_set& e) {
-        HandlePythonError();
-        return false;
     } catch (const std::exception& e) {
+        // Handle exception
         return false;
     }
 }
@@ -164,49 +148,58 @@ bool PythonPlugin::EvaluateExpression(const std::string& expression, std::string
     
     try {
         py::gil_scoped_acquire gil;
-        py::object eval_result = py::eval(expression, py::globals(), py::globals());
-        result = py::str(eval_result);
+        
+        // Evaluate the expression
+        py::object obj = py::eval(expression, *mainNamespace_);
+        
+        // Convert the result to string
+        result = py::str(obj);
         return true;
-    } catch (const py::error_already_set& e) {
-        HandlePythonError();
-        return false;
     } catch (const std::exception& e) {
+        // Handle exception
+        result = e.what();
         return false;
     }
 }
 
 bool PythonPlugin::RegisterFunction(const std::string& name, void* function) {
-    if (!initialized_ || !function) {
+    if (!initialized_) {
         return false;
     }
     
     try {
-        // This is a simplified implementation
-        // In a real implementation, you would need to wrap the function
-        // using pybind11 or similar
+        py::gil_scoped_acquire gil;
+        
+        // Register the function
+        // Note: This is a simplified implementation
+        // In a real implementation, you would need to wrap the function properly
         return true;
     } catch (const std::exception& e) {
+        // Handle exception
         return false;
     }
 }
 
 bool PythonPlugin::RegisterObject(const std::string& name, void* object) {
-    if (!initialized_ || !object) {
+    if (!initialized_) {
         return false;
     }
     
     try {
-        // This is a simplified implementation
-        // In a real implementation, you would need to wrap the object
-        // using pybind11 or similar
+        py::gil_scoped_acquire gil;
+        
+        // Register the object
+        // Note: This is a simplified implementation
+        // In a real implementation, you would need to wrap the object properly
         return true;
     } catch (const std::exception& e) {
+        // Handle exception
         return false;
     }
 }
 
 std::vector<std::string> PythonPlugin::GetSupportedExtensions() const {
-    return {".py", ".pyw"};
+    return {".py"};
 }
 
 std::string PythonPlugin::GetLanguageName() const {
@@ -220,7 +213,9 @@ std::string PythonPlugin::GetLanguageVersion() const {
     
     try {
         py::gil_scoped_acquire gil;
-        py::module sys = py::module::import("sys");
+        
+        // Get Python version
+        py::module_ sys = py::module_::import("sys");
         std::string version = py::str(sys.attr("version"));
         return version;
     } catch (const std::exception& e) {
@@ -235,7 +230,9 @@ bool PythonPlugin::AddToPath(const std::string& path) {
     
     try {
         py::gil_scoped_acquire gil;
-        py::module sys = py::module::import("sys");
+        
+        // Add path to sys.path
+        py::module_ sys = py::module_::import("sys");
         py::list paths = sys.attr("path").cast<py::list>();
         paths.append(path);
         return true;
@@ -251,11 +248,10 @@ PyObject* PythonPlugin::ImportModule(const std::string& moduleName) {
     
     try {
         py::gil_scoped_acquire gil;
-        py::module module = py::module::import(moduleName.c_str());
+        
+        // Import module
+        py::module_ module = py::module_::import(moduleName.c_str());
         return module.ptr();
-    } catch (const py::error_already_set& e) {
-        HandlePythonError();
-        return nullptr;
     } catch (const std::exception& e) {
         return nullptr;
     }
@@ -268,12 +264,11 @@ PyObject* PythonPlugin::GetAttribute(PyObject* object, const std::string& attrib
     
     try {
         py::gil_scoped_acquire gil;
+        
+        // Get attribute
         py::handle handle(object);
         py::object attr = handle.attr(attributeName.c_str());
         return attr.ptr();
-    } catch (const py::error_already_set& e) {
-        HandlePythonError();
-        return nullptr;
     } catch (const std::exception& e) {
         return nullptr;
     }
@@ -286,43 +281,25 @@ PyObject* PythonPlugin::CallFunction(PyObject* function, PyObject* args) {
     
     try {
         py::gil_scoped_acquire gil;
+        
+        // Call function
         py::handle func_handle(function);
         py::handle args_handle(args);
-        py::object args_obj = py::reinterpret_borrow<py::object>(args_handle);
-        py::object result = func_handle(*py::tuple(args_obj));
+        py::object result = func_handle(py::reinterpret_borrow<py::tuple>(args_handle));
         return result.ptr();
-    } catch (const py::error_already_set& e) {
-        HandlePythonError();
-        return nullptr;
     } catch (const std::exception& e) {
         return nullptr;
     }
 }
 
-PyObject* PythonPlugin::GetMainModule() const {
-    return mainModule_;
-}
-
-PyObject* PythonPlugin::GetMainNamespace() const {
-    return mainNamespace_;
-}
-
 bool PythonPlugin::InitializePython() {
     try {
         // Initialize Python interpreter
-        pybind11::initialize_interpreter();
+        py::initialize_interpreter();
         
-        // Get main module and namespace
-        py::gil_scoped_acquire gil;
-        mainModule_ = PyImport_AddModule("__main__");
-        if (!mainModule_) {
-            return false;
-        }
-        
-        mainNamespace_ = PyModule_GetDict(mainModule_);
-        if (!mainNamespace_) {
-            return false;
-        }
+        // Create main module and namespace
+        mainModule_ = new py::module_(py::module_::import("__main__"));
+        mainNamespace_ = new py::dict(mainModule_->attr("__dict__"));
         
         // Save thread state
         threadState_ = PyThreadState_Get();
@@ -335,21 +312,28 @@ bool PythonPlugin::InitializePython() {
 
 void PythonPlugin::FinalizePython() {
     try {
-        // Release references
-        mainModule_ = nullptr;
-        mainNamespace_ = nullptr;
-        threadState_ = nullptr;
+        // Clean up resources
+        if (mainNamespace_) {
+            delete mainNamespace_;
+            mainNamespace_ = nullptr;
+        }
+        
+        if (mainModule_) {
+            delete mainModule_;
+            mainModule_ = nullptr;
+        }
         
         // Finalize Python interpreter
-        pybind11::finalize_interpreter();
+        py::finalize_interpreter();
     } catch (const std::exception& e) {
-        // Ignore exceptions during shutdown
+        // Handle exception
     }
 }
 
 bool PythonPlugin::HandlePythonError() {
     try {
         py::gil_scoped_acquire gil;
+        
         if (PyErr_Occurred()) {
             PyObject *type, *value, *traceback;
             PyErr_Fetch(&type, &value, &traceback);
@@ -397,43 +381,46 @@ bool PythonPlugin::RegisterMathFunctions() {
         static py::module_::module_def math_module_def;
         py::module_ math_module = py::module_::create_extension_module("math_plugin", nullptr, &math_module_def);
         
-        // Example: Register Vector3 class
+        // Register Vector3 class
         py::class_<Vector3>(math_module, "Vector3")
-            .def(py::init<>())
-            .def(py::init<float, float, float>())
-            .def_readwrite("x", &Vector3::x)
-            .def_readwrite("y", &Vector3::y)
-            .def_readwrite("z", &Vector3::z)
+            .def(py::init([]() { return MathPlugin::CreateVector3(0.0f, 0.0f, 0.0f); }))
+            .def(py::init([](float x, float y, float z) { return MathPlugin::CreateVector3(x, y, z); }))
+            .def_property("x", 
+                [](const Vector3& v) { float x, y, z; MathPlugin::GetVector3Components(v, x, y, z); return x; },
+                [](Vector3& v, float x) { float oldX, y, z; MathPlugin::GetVector3Components(v, oldX, y, z); v = MathPlugin::CreateVector3(x, y, z); }
+            )
+            .def_property("y", 
+                [](const Vector3& v) { float x, y, z; MathPlugin::GetVector3Components(v, x, y, z); return y; },
+                [](Vector3& v, float y) { float x, oldY, z; MathPlugin::GetVector3Components(v, x, oldY, z); v = MathPlugin::CreateVector3(x, y, z); }
+            )
+            .def_property("z", 
+                [](const Vector3& v) { float x, y, z; MathPlugin::GetVector3Components(v, x, y, z); return z; },
+                [](Vector3& v, float z) { float x, y, oldZ; MathPlugin::GetVector3Components(v, x, y, oldZ); v = MathPlugin::CreateVector3(x, y, z); }
+            )
             .def("__add__", [](const Vector3& self, const Vector3& other) {
-                return Vector3(self.x + other.x, self.y + other.y, self.z + other.z);
+                return MathPlugin::Vector3Add(self, other);
             })
             .def("__sub__", [](const Vector3& self, const Vector3& other) {
-                return Vector3(self.x - other.x, self.y - other.y, self.z - other.z);
+                return MathPlugin::Vector3Subtract(self, other);
             })
             .def("dot", [](const Vector3& self, const Vector3& other) {
-                return self.x * other.x + self.y * other.y + self.z * other.z;
+                return MathPlugin::Vector3Dot(self, other);
             })
             .def("cross", [](const Vector3& self, const Vector3& other) {
-                return Vector3(
-                    self.y * other.z - self.z * other.y,
-                    self.z * other.x - self.x * other.z,
-                    self.x * other.y - self.y * other.x
-                );
+                return MathPlugin::Vector3Cross(self, other);
             })
             .def("length", [](const Vector3& self) {
-                return std::sqrt(self.x * self.x + self.y * self.y + self.z * self.z);
+                return MathPlugin::Vector3Length(self);
             })
             .def("normalize", [](const Vector3& self) {
-                float len = std::sqrt(self.x * self.x + self.y * self.y + self.z * self.z);
-                if (len > 0) {
-                    return Vector3(self.x / len, self.y / len, self.z / len);
-                }
-                return self;
+                return MathPlugin::Vector3Normalize(self);
             })
             .def("__repr__", [](const Vector3& self) {
-                return "Vector3(" + std::to_string(self.x) + ", " + 
-                       std::to_string(self.y) + ", " + 
-                       std::to_string(self.z) + ")";
+                float x, y, z;
+                MathPlugin::GetVector3Components(self, x, y, z);
+                return "Vector3(" + std::to_string(x) + ", " + 
+                       std::to_string(y) + ", " + 
+                       std::to_string(z) + ")";
             });
         
         // Add the module to sys.modules

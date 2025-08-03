@@ -5,7 +5,7 @@ include(FetchContent)
 FetchContent_Declare(
     googletest
     GIT_REPOSITORY https://github.com/google/googletest.git
-    GIT_TAG main
+    GIT_TAG release-1.12.1
     GIT_SHALLOW TRUE
 )
 
@@ -37,6 +37,7 @@ target_include_directories(manual_test PRIVATE
     ${CMAKE_SOURCE_DIR}/src/Plugins/ScriptPlugin/include
     ${CMAKE_SOURCE_DIR}/src/Plugins/ScriptPlugin/PythonPlugin/include
     ${CMAKE_SOURCE_DIR}/src/Plugins/ScriptPlugin/LuaPlugin/include
+    ${rtm_SOURCE_DIR}/includes
 )
 
 # Link dependencies for manual test
@@ -78,6 +79,7 @@ target_include_directories(PluginSystemTests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/Plugins/ScriptPlugin/include
     ${CMAKE_SOURCE_DIR}/src/Plugins/ScriptPlugin/PythonPlugin/include
     ${CMAKE_SOURCE_DIR}/src/Plugins/ScriptPlugin/LuaPlugin/include
+    ${rtm_SOURCE_DIR}/includes
 )
 
 # Link dependencies

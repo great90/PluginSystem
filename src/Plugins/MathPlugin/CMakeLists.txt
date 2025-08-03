@@ -1,23 +1,31 @@
 # src/Plugins/MathPlugin/CMakeLists.txt
 
+# Download and build Realtime Math (RTM) from GitHub
+include(FetchContent)
+FetchContent_Declare(
+    rtm
+    GIT_REPOSITORY https://github.com/nfrechette/rtm.git
+    GIT_TAG v2.1.5
+    GIT_SHALLOW TRUE
+)
+
+# Configure RTM build
+set(RTM_INSTALL OFF CACHE BOOL "Install RTM" FORCE)
+set(RTM_BUILD_TESTS OFF CACHE BOOL "Build RTM tests" FORCE)
+set(RTM_BUILD_BENCHMARK OFF CACHE BOOL "Build RTM benchmarks" FORCE)
+
+# Make RTM available
+FetchContent_MakeAvailable(rtm)
+
 # Define source files
 set(MATH_PLUGIN_SOURCES
     src/MathPlugin.cpp
-    src/Vector2.cpp
-    src/Vector3.cpp
-    src/Vector4.cpp
-    src/Matrix4x4.cpp
-    src/Quaternion.cpp
 )
 
 # Define header files
 set(MATH_PLUGIN_HEADERS
     include/MathPlugin.h
-    include/Vector2.h
-    include/Vector3.h
-    include/Vector4.h
-    include/Matrix4x4.h
-    include/Quaternion.h
+    include/MathPluginExport.h
 )
 
 # Create library target
@@ -36,10 +44,13 @@ target_include_directories(MathPlugin
         $<INSTALL_INTERFACE:include>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${rtm_SOURCE_DIR}/includes
 )
 
 # Link dependencies
-target_link_libraries(MathPlugin PRIVATE PluginCore)
+target_link_libraries(MathPlugin PRIVATE 
+    PluginCore
+)
 
 # Installation rules
 install(TARGETS MathPlugin

@@ -6,11 +6,6 @@
 #include <gtest/gtest.h>
 #include "PluginManager.h"
 #include "MathPlugin.h"
-#include "Vector2.h"
-#include "Vector3.h"
-#include "Vector4.h"
-#include "Matrix4x4.h"
-#include "Quaternion.h"
 #include <cmath>
 
 // Define M_PI if not defined
@@ -56,7 +51,7 @@ TEST_F(MathPluginTest, PluginInfoTest) {
     
     EXPECT_EQ("MathPlugin", info.name);
     EXPECT_EQ("Math Utilities Plugin", info.displayName);
-    EXPECT_EQ("Provides mathematical utilities and types", info.description);
+    EXPECT_EQ("Provides mathematical utilities and types using Realtime Math library", info.description);
     EXPECT_EQ("Plugin System Team", info.author);
     
     // Check version
@@ -91,51 +86,53 @@ TEST_F(MathPluginTest, LerpTest) {
     EXPECT_NEAR(2.0f, mathPlugin->Lerp(1.0f, 2.0f, 1.0f), 0.0001f);
     
     // Test Vector3 lerp
-    Vector3 v1(1.0f, 2.0f, 3.0f);
-    Vector3 v2(4.0f, 5.0f, 6.0f);
+    Vector3 v1 = mathPlugin->MakeVector3(1.0f, 2.0f, 3.0f);
+    Vector3 v2 = mathPlugin->MakeVector3(4.0f, 5.0f, 6.0f);
     
     Vector3 result = mathPlugin->Lerp(v1, v2, 0.0f);
-    EXPECT_NEAR(1.0f, result.x, 0.0001f);
-    EXPECT_NEAR(2.0f, result.y, 0.0001f);
-    EXPECT_NEAR(3.0f, result.z, 0.0001f);
+    EXPECT_NEAR(1.0f, mathPlugin->GetX(result), 0.0001f);
+    EXPECT_NEAR(2.0f, mathPlugin->GetY(result), 0.0001f);
+    EXPECT_NEAR(3.0f, mathPlugin->GetZ(result), 0.0001f);
     
     result = mathPlugin->Lerp(v1, v2, 0.5f);
-    EXPECT_NEAR(2.5f, result.x, 0.0001f);
-    EXPECT_NEAR(3.5f, result.y, 0.0001f);
-    EXPECT_NEAR(4.5f, result.z, 0.0001f);
+    EXPECT_NEAR(2.5f, mathPlugin->GetX(result), 0.0001f);
+    EXPECT_NEAR(3.5f, mathPlugin->GetY(result), 0.0001f);
+    EXPECT_NEAR(4.5f, mathPlugin->GetZ(result), 0.0001f);
     
     result = mathPlugin->Lerp(v1, v2, 1.0f);
-    EXPECT_NEAR(4.0f, result.x, 0.0001f);
-    EXPECT_NEAR(5.0f, result.y, 0.0001f);
-    EXPECT_NEAR(6.0f, result.z, 0.0001f);
+    EXPECT_NEAR(4.0f, mathPlugin->GetX(result), 0.0001f);
+    EXPECT_NEAR(5.0f, mathPlugin->GetY(result), 0.0001f);
+    EXPECT_NEAR(6.0f, mathPlugin->GetZ(result), 0.0001f);
 }
 
 // Test quaternion spherical linear interpolation
 TEST_F(MathPluginTest, SlerpTest) {
-    // Create two quaternions representing rotations
-    Quaternion q1 = Quaternion::FromAxisAngle(Vector3(0, 1, 0), 0.0f);
-    Quaternion q2 = Quaternion::FromAxisAngle(Vector3(0, 1, 0), mathPlugin->DegreesToRadians(90.0f));
+    // Create two quaternions representing rotations around Y axis
+    // Identity quaternion (no rotation)
+    Quaternion q1 = rtm::quat_identity();
+    // 90 degree rotation around Y axis
+    Quaternion q2 = rtm::quat_from_axis_angle(rtm::vector_set(0.0f, 1.0f, 0.0f), mathPlugin->DegreesToRadians(90.0f));
     
     // Test slerp at different t values
     Quaternion result = mathPlugin->Slerp(q1, q2, 0.0f);
-    EXPECT_NEAR(q1.x, result.x, 0.0001f);
-    EXPECT_NEAR(q1.y, result.y, 0.0001f);
-    EXPECT_NEAR(q1.z, result.z, 0.0001f);
-    EXPECT_NEAR(q1.w, result.w, 0.0001f);
+    EXPECT_NEAR(rtm::quat_get_x(q1), rtm::quat_get_x(result), 0.0001f);
+    EXPECT_NEAR(rtm::quat_get_y(q1), rtm::quat_get_y(result), 0.0001f);
+    EXPECT_NEAR(rtm::quat_get_z(q1), rtm::quat_get_z(result), 0.0001f);
+    EXPECT_NEAR(rtm::quat_get_w(q1), rtm::quat_get_w(result), 0.0001f);
     
     result = mathPlugin->Slerp(q1, q2, 1.0f);
-    EXPECT_NEAR(q2.x, result.x, 0.0001f);
-    EXPECT_NEAR(q2.y, result.y, 0.0001f);
-    EXPECT_NEAR(q2.z, result.z, 0.0001f);
-    EXPECT_NEAR(q2.w, result.w, 0.0001f);
+    EXPECT_NEAR(rtm::quat_get_x(q2), rtm::quat_get_x(result), 0.0001f);
+    EXPECT_NEAR(rtm::quat_get_y(q2), rtm::quat_get_y(result), 0.0001f);
+    EXPECT_NEAR(rtm::quat_get_z(q2), rtm::quat_get_z(result), 0.0001f);
+    EXPECT_NEAR(rtm::quat_get_w(q2), rtm::quat_get_w(result), 0.0001f);
     
     // Test slerp at 0.5 (should be halfway between)
     result = mathPlugin->Slerp(q1, q2, 0.5f);
-    Quaternion expected = Quaternion::FromAxisAngle(Vector3(0, 1, 0), mathPlugin->DegreesToRadians(45.0f));
-    EXPECT_NEAR(expected.x, result.x, 0.0001f);
-    EXPECT_NEAR(expected.y, result.y, 0.0001f);
-    EXPECT_NEAR(expected.z, result.z, 0.0001f);
-    EXPECT_NEAR(expected.w, result.w, 0.0001f);
+    Quaternion expected = rtm::quat_from_axis_angle(rtm::vector_set(0.0f, 1.0f, 0.0f), mathPlugin->DegreesToRadians(45.0f));
+    EXPECT_NEAR(rtm::quat_get_x(expected), rtm::quat_get_x(result), 0.0001f);
+    EXPECT_NEAR(rtm::quat_get_y(expected), rtm::quat_get_y(result), 0.0001f);
+    EXPECT_NEAR(rtm::quat_get_z(expected), rtm::quat_get_z(result), 0.0001f);
+    EXPECT_NEAR(rtm::quat_get_w(expected), rtm::quat_get_w(result), 0.0001f);
 }
 
 // Test clamp function
@@ -162,47 +159,47 @@ TEST_F(MathPluginTest, RandomTest) {
     }
 }
 
-// Test Vector3 operations
+// Test Vector3 operations using RTM
 TEST_F(MathPluginTest, Vector3Test) {
-    Vector3 v1(1.0f, 2.0f, 3.0f);
-    Vector3 v2(4.0f, 5.0f, 6.0f);
+    Vector3 v1 = mathPlugin->MakeVector3(1.0f, 2.0f, 3.0f);
+    Vector3 v2 = mathPlugin->MakeVector3(4.0f, 5.0f, 6.0f);
     
     // Test addition
-    Vector3 sum = v1 + v2;
-    EXPECT_NEAR(5.0f, sum.x, 0.0001f);
-    EXPECT_NEAR(7.0f, sum.y, 0.0001f);
-    EXPECT_NEAR(9.0f, sum.z, 0.0001f);
+    Vector3 sum = rtm::vector_add(v1, v2);
+    EXPECT_NEAR(5.0f, rtm::vector_get_x(sum), 0.0001f);
+    EXPECT_NEAR(7.0f, rtm::vector_get_y(sum), 0.0001f);
+    EXPECT_NEAR(9.0f, rtm::vector_get_z(sum), 0.0001f);
     
     // Test subtraction
-    Vector3 diff = v2 - v1;
-    EXPECT_NEAR(3.0f, diff.x, 0.0001f);
-    EXPECT_NEAR(3.0f, diff.y, 0.0001f);
-    EXPECT_NEAR(3.0f, diff.z, 0.0001f);
+    Vector3 diff = rtm::vector_sub(v2, v1);
+    EXPECT_NEAR(3.0f, rtm::vector_get_x(diff), 0.0001f);
+    EXPECT_NEAR(3.0f, rtm::vector_get_y(diff), 0.0001f);
+    EXPECT_NEAR(3.0f, rtm::vector_get_z(diff), 0.0001f);
     
     // Test scalar multiplication
-    Vector3 scaled = v1 * 2.0f;
-    EXPECT_NEAR(2.0f, scaled.x, 0.0001f);
-    EXPECT_NEAR(4.0f, scaled.y, 0.0001f);
-    EXPECT_NEAR(6.0f, scaled.z, 0.0001f);
+    Vector3 scaled = rtm::vector_mul(v1, 2.0f);
+    EXPECT_NEAR(2.0f, rtm::vector_get_x(scaled), 0.0001f);
+    EXPECT_NEAR(4.0f, rtm::vector_get_y(scaled), 0.0001f);
+    EXPECT_NEAR(6.0f, rtm::vector_get_z(scaled), 0.0001f);
     
     // Test dot product
-    float dot = v1.Dot(v2);
+    float dot = rtm::vector_dot3(v1, v2);
     EXPECT_NEAR(32.0f, dot, 0.0001f);  // 1*4 + 2*5 + 3*6 = 4 + 10 + 18 = 32
     
     // Test cross product
-    Vector3 cross = v1.Cross(v2);
-    EXPECT_NEAR(-3.0f, cross.x, 0.0001f);  // (2*6 - 3*5) = 12 - 15 = -3
-    EXPECT_NEAR(6.0f, cross.y, 0.0001f);   // (3*4 - 1*6) = 12 - 6 = 6
-    EXPECT_NEAR(-3.0f, cross.z, 0.0001f);  // (1*5 - 2*4) = 5 - 8 = -3
+    Vector3 cross = rtm::vector_cross3(v1, v2);
+    EXPECT_NEAR(-3.0f, rtm::vector_get_x(cross), 0.0001f);  // (2*6 - 3*5) = 12 - 15 = -3
+    EXPECT_NEAR(6.0f, rtm::vector_get_y(cross), 0.0001f);   // (3*4 - 1*6) = 12 - 6 = 6
+    EXPECT_NEAR(-3.0f, rtm::vector_get_z(cross), 0.0001f);  // (1*5 - 2*4) = 5 - 8 = -3
     
     // Test length
-    float length = v1.Length();
+    float length = rtm::vector_length3(v1);
     EXPECT_NEAR(std::sqrt(14.0f), length, 0.0001f);  // sqrt(1^2 + 2^2 + 3^2) = sqrt(14)
     
     // Test normalization
-    Vector3 normalized = v1.Normalized();
+    Vector3 normalized = rtm::vector_normalize3(v1);
     float invLength = 1.0f / std::sqrt(14.0f);
-    EXPECT_NEAR(1.0f * invLength, normalized.x, 0.0001f);
-    EXPECT_NEAR(2.0f * invLength, normalized.y, 0.0001f);
-    EXPECT_NEAR(3.0f * invLength, normalized.z, 0.0001f);
+    EXPECT_NEAR(1.0f * invLength, rtm::vector_get_x(normalized), 0.0001f);
+    EXPECT_NEAR(2.0f * invLength, rtm::vector_get_y(normalized), 0.0001f);
+    EXPECT_NEAR(3.0f * invLength, rtm::vector_get_z(normalized), 0.0001f);
 }

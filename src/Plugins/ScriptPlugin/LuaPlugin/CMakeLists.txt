@@ -30,6 +30,7 @@ target_include_directories(LuaPlugin
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${LUA_SOURCE_DIR}
+        ${rtm_SOURCE_DIR}/includes
 )
 
 # Add dependency to ensure lua_lib is built before LuaPlugin

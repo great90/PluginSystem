@@ -12,6 +12,10 @@
 #include "LuaPlugin.h"
 #include <iostream>
 #include <filesystem>
+#include <rtm/types.h>
+
+// Use Vector3 from MathPlugin
+using Vector3 = rtm::vector4f;
 
 Application::Application(const std::string& pluginDir)
     : m_pluginDir(pluginDir)
@@ -123,58 +127,63 @@ void Application::DemonstrateMathPlugin() {
     std::cout << "\n=== Math Plugin Demonstration ===" << std::endl;
     
     // Create and manipulate vectors
-    Vector3 v1(1.0f, 2.0f, 3.0f);
-    Vector3 v2(4.0f, 5.0f, 6.0f);
+    Vector3 v1 = m_mathPlugin->MakeVector3(1.0f, 2.0f, 3.0f);
+    Vector3 v2 = m_mathPlugin->MakeVector3(4.0f, 5.0f, 6.0f);
     
-    Vector3 sum = v1 + v2;
-    Vector3 diff = v2 - v1;
-    Vector3 scaled = v1 * 2.0f;
+    Vector3 sum = rtm::vector_add(v1, v2);
+    Vector3 diff = rtm::vector_sub(v2, v1);
+    Vector3 scaled = rtm::vector_mul(v1, rtm::scalar_set(2.0f));
     
     std::cout << "Vector operations:" << std::endl;
-    std::cout << "  v1 = (" << v1.x << ", " << v1.y << ", " << v1.z << ")" << std::endl;
-    std::cout << "  v2 = (" << v2.x << ", " << v2.y << ", " << v2.z << ")" << std::endl;
-    std::cout << "  v1 + v2 = (" << sum.x << ", " << sum.y << ", " << sum.z << ")" << std::endl;
-    std::cout << "  v2 - v1 = (" << diff.x << ", " << diff.y << ", " << diff.z << ")" << std::endl;
-    std::cout << "  v1 * 2 = (" << scaled.x << ", " << scaled.y << ", " << scaled.z << ")" << std::endl;
+    std::cout << "  v1 = (" << m_mathPlugin->GetVector3X(v1) << ", " << m_mathPlugin->GetVector3Y(v1) << ", " << m_mathPlugin->GetVector3Z(v1) << ")" << std::endl;
+    std::cout << "  v2 = (" << m_mathPlugin->GetVector3X(v2) << ", " << m_mathPlugin->GetVector3Y(v2) << ", " << m_mathPlugin->GetVector3Z(v2) << ")" << std::endl;
+    std::cout << "  v1 + v2 = (" << m_mathPlugin->GetVector3X(sum) << ", " << m_mathPlugin->GetVector3Y(sum) << ", " << m_mathPlugin->GetVector3Z(sum) << ")" << std::endl;
+    std::cout << "  v2 - v1 = (" << m_mathPlugin->GetVector3X(diff) << ", " << m_mathPlugin->GetVector3Y(diff) << ", " << m_mathPlugin->GetVector3Z(diff) << ")" << std::endl;
+    std::cout << "  v1 * 2 = (" << m_mathPlugin->GetVector3X(scaled) << ", " << m_mathPlugin->GetVector3Y(scaled) << ", " << m_mathPlugin->GetVector3Z(scaled) << ")" << std::endl;
     
-    float dot = v1.Dot(v2);
-    Vector3 cross = v1.Cross(v2);
-    float length = v1.Length();
-    Vector3 normalized = v1.Normalized();
+    float dot = rtm::vector_dot3(v1, v2);
+    Vector3 cross = rtm::vector_cross3(v1, v2);
+    float length = MathPlugin::Vector3Length(v1);
+    Vector3 normalized = MathPlugin::Vector3Normalize(v1);
     
     std::cout << "Vector methods:" << std::endl;
     std::cout << "  v1.Dot(v2) = " << dot << std::endl;
-    std::cout << "  v1.Cross(v2) = (" << cross.x << ", " << cross.y << ", " << cross.z << ")" << std::endl;
+    std::cout << "  v1.Cross(v2) = (" << m_mathPlugin->GetVector3X(cross) << ", " << m_mathPlugin->GetVector3Y(cross) << ", " << m_mathPlugin->GetVector3Z(cross) << ")" << std::endl;
     std::cout << "  v1.Length() = " << length << std::endl;
-    std::cout << "  v1.Normalized() = (" << normalized.x << ", " << normalized.y << ", " << normalized.z << ")" << std::endl;
+    std::cout << "  v1.Normalized() = (" << m_mathPlugin->GetVector3X(normalized) << ", " << m_mathPlugin->GetVector3Y(normalized) << ", " << m_mathPlugin->GetVector3Z(normalized) << ")" << std::endl;
     
     // Demonstrate quaternion operations
-    Quaternion q1 = Quaternion::FromAxisAngle(Vector3(0, 1, 0), m_mathPlugin->DegreesToRadians(45.0f));
-    Quaternion q2 = Quaternion::FromEulerAngles(
+    Quaternion q1 = m_mathPlugin->QuaternionFromAxisAngle(m_mathPlugin->MakeVector3(0, 1, 0), m_mathPlugin->DegreesToRadians(45.0f));
+    Quaternion q2 = m_mathPlugin->QuaternionFromEulerAngles(
         m_mathPlugin->DegreesToRadians(30.0f),
         m_mathPlugin->DegreesToRadians(45.0f),
         m_mathPlugin->DegreesToRadians(60.0f)
     );
     
-    Quaternion qMul = q1 * q2;
-    Vector3 rotated = q1.RotateVector(v1);
+    Quaternion qMul = m_mathPlugin->QuaternionMultiply(q1, q2);
+    Vector3 rotated = m_mathPlugin->QuaternionRotateVector(q1, v1);
     
     std::cout << "\nQuaternion operations:" << std::endl;
-    std::cout << "  q1 = (" << q1.x << ", " << q1.y << ", " << q1.z << ", " << q1.w << ")" << std::endl;
-    std::cout << "  q2 = (" << q2.x << ", " << q2.y << ", " << q2.z << ", " << q2.w << ")" << std::endl;
-    std::cout << "  q1 * q2 = (" << qMul.x << ", " << qMul.y << ", " << qMul.z << ", " << qMul.w << ")" << std::endl;
-    std::cout << "  q1.RotateVector(v1) = (" << rotated.x << ", " << rotated.y << ", " << rotated.z << ")" << std::endl;
+    std::cout << "  q1 = (" << m_mathPlugin->GetQuaternionX(q1) << ", " << m_mathPlugin->GetQuaternionY(q1) << ", " 
+              << m_mathPlugin->GetQuaternionZ(q1) << ", " << m_mathPlugin->GetQuaternionW(q1) << ")" << std::endl;
+    std::cout << "  q2 = (" << m_mathPlugin->GetQuaternionX(q2) << ", " << m_mathPlugin->GetQuaternionY(q2) << ", " 
+              << m_mathPlugin->GetQuaternionZ(q2) << ", " << m_mathPlugin->GetQuaternionW(q2) << ")" << std::endl;
+    std::cout << "  q1 * q2 = (" << m_mathPlugin->GetQuaternionX(qMul) << ", " << m_mathPlugin->GetQuaternionY(qMul) << ", " 
+              << m_mathPlugin->GetQuaternionZ(qMul) << ", " << m_mathPlugin->GetQuaternionW(qMul) << ")" << std::endl;
+    std::cout << "  q1.RotateVector(v1) = (" << m_mathPlugin->GetVector3X(rotated) << ", " << m_mathPlugin->GetVector3Y(rotated) << ", " 
+              << m_mathPlugin->GetVector3Z(rotated) << ")" << std::endl;
     
     // Demonstrate matrix operations
-    Matrix4x4 translationMatrix = Matrix4x4::Translation(v1);
-    Matrix4x4 scaleMatrix = Matrix4x4::Scaling(Vector3(2.0f, 2.0f, 2.0f));
-    Matrix4x4 rotationMatrix = Matrix4x4::RotationY(m_mathPlugin->DegreesToRadians(45.0f));
+    Matrix4x4 translationMatrix = m_mathPlugin->MakeTranslationMatrix(v1);
+    Matrix4x4 scaleMatrix = m_mathPlugin->MakeScalingMatrix(m_mathPlugin->MakeVector3(2.0f, 2.0f, 2.0f));
+    Matrix4x4 rotationMatrix = m_mathPlugin->MakeRotationYMatrix(m_mathPlugin->DegreesToRadians(45.0f));
     
-    Matrix4x4 combined = translationMatrix * rotationMatrix * scaleMatrix;
-    Vector3 transformed = combined.TransformVector(v2);
+    Matrix4x4 combined = m_mathPlugin->MatrixMultiply(m_mathPlugin->MatrixMultiply(translationMatrix, rotationMatrix), scaleMatrix);
+    Vector3 transformed = m_mathPlugin->MatrixTransformVector(combined, v2);
     
     std::cout << "\nMatrix operations:" << std::endl;
-    std::cout << "  TransformVector result = (" << transformed.x << ", " << transformed.y << ", " << transformed.z << ")" << std::endl;
+    std::cout << "  TransformVector result = (" << m_mathPlugin->GetVector3X(transformed) << ", " 
+              << m_mathPlugin->GetVector3Y(transformed) << ", " << m_mathPlugin->GetVector3Z(transformed) << ")" << std::endl;
     
     // Demonstrate utility functions
     float lerped = m_mathPlugin->Lerp(0.0f, 10.0f, 0.5f);
@@ -184,7 +193,7 @@ void Application::DemonstrateMathPlugin() {
     
     std::cout << "\nUtility functions:" << std::endl;
     std::cout << "  Lerp(0, 10, 0.5) = " << lerped << std::endl;
-    std::cout << "  Lerp(v1, v2, 0.5) = (" << lerpedVec.x << ", " << lerpedVec.y << ", " << lerpedVec.z << ")" << std::endl;
+    std::cout << "  Lerp(v1, v2, 0.5) = (" << m_mathPlugin->GetVector3X(lerpedVec) << ", " << m_mathPlugin->GetVector3Y(lerpedVec) << ", " << m_mathPlugin->GetVector3Z(lerpedVec) << ")" << std::endl;
     std::cout << "  Random(1, 10) = " << random << std::endl;
     std::cout << "  RandomInt(1, 100) = " << randomInt << std::endl;
 }
