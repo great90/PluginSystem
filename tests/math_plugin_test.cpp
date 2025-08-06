@@ -28,7 +28,7 @@ using namespace math;
 class MathPluginTest : public ::testing::Test {
 protected:
     PluginManager pluginManager;
-    MathPlugin* mathPlugin;
+    std::shared_ptr<MathPlugin> mathPlugin;
     
     void SetUp() override {
         // Set the plugin directory and load the MathPlugin
@@ -43,7 +43,7 @@ protected:
     void TearDown() override {
         // Unload all plugins to clean up
         pluginManager.UnloadAllPlugins();
-        mathPlugin = nullptr;
+        mathPlugin.reset();
     }
 };
 

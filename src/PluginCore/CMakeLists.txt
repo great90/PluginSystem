@@ -3,6 +3,7 @@
 set(PLUGIN_CORE_SOURCES
     src/PluginManager.cpp
     src/DependencyResolver.cpp
+    src/ScriptObjectWrapper.cpp
 )
 
 # Define header files
@@ -12,6 +13,7 @@ set(PLUGIN_CORE_HEADERS
     include/PluginManager.h
     include/DependencyResolver.h
     include/PluginExport.h
+    include/ScriptObjectWrapper.h
 )
 
 # Create library target

@@ -16,7 +16,7 @@
 class LogPluginTest : public ::testing::Test {
 protected:
     PluginManager pluginManager;
-    LogPlugin* logPlugin;
+    std::shared_ptr<LogPlugin> logPlugin;
     std::string testLogFile;
     
     void SetUp() override {
@@ -40,7 +40,7 @@ protected:
     void TearDown() override {
         // Unload all plugins to clean up
         pluginManager.UnloadAllPlugins();
-        logPlugin = nullptr;
+        logPlugin.reset();
         
         // Clean up test log file
         if (std::filesystem::exists(testLogFile)) {

@@ -14,7 +14,7 @@
 #include <filesystem>
 
 // Use Vector3 from MathPlugin
-using Vector3 = rtm::vector4f;
+using Vector3 = math::Vector3;
 
 Application::Application(const std::string& pluginDir)
     : m_pluginDir(pluginDir)
@@ -56,17 +56,24 @@ bool Application::Initialize() {
     m_loadedPlugins = m_pluginManager->GetLoadedPluginNames();
     std::cout << "Loaded " << m_loadedPlugins.size() << " plugins:" << std::endl;
     for (const auto& name : m_loadedPlugins) {
-        IPlugin* plugin = m_pluginManager->GetPlugin(name);
+        auto plugin = m_pluginManager->GetPlugin(name);
         if (plugin) {
             PrintPluginInfo(plugin->GetPluginInfo());
         }
     }
     
     // Get specific plugin instances
-    m_mathPlugin = static_cast<math::MathPlugin*>(m_pluginManager->GetPlugin("MathPlugin"));
-    m_logPlugin = static_cast<LogPlugin*>(m_pluginManager->GetPlugin("LogPlugin"));
-    m_pythonPlugin = static_cast<PythonPlugin*>(m_pluginManager->GetPlugin("PythonPlugin"));
-    m_luaPlugin = static_cast<LuaPlugin*>(m_pluginManager->GetPlugin("LuaPlugin"));
+    auto mathPluginPtr = m_pluginManager->GetPlugin("MathPlugin");
+    m_mathPlugin = mathPluginPtr ? static_cast<math::MathPlugin*>(mathPluginPtr.get()) : nullptr;
+    
+    auto logPluginPtr = m_pluginManager->GetPlugin("LogPlugin");
+    m_logPlugin = logPluginPtr ? static_cast<LogPlugin*>(logPluginPtr.get()) : nullptr;
+    
+    auto pythonPluginPtr = m_pluginManager->GetPlugin("PythonPlugin");
+    m_pythonPlugin = pythonPluginPtr ? static_cast<PythonPlugin*>(pythonPluginPtr.get()) : nullptr;
+    
+    auto luaPluginPtr = m_pluginManager->GetPlugin("LuaPlugin");
+    m_luaPlugin = luaPluginPtr ? static_cast<LuaPlugin*>(luaPluginPtr.get()) : nullptr;
     
     return true;
 }
@@ -144,8 +151,8 @@ void Application::DemonstrateMathPlugin() {
     
     float dot = rtm::vector_dot3(v1, v2);
     Vector3 cross = rtm::vector_cross3(v1, v2);
-    float length = MathPlugin::Vector3Length(v1);
-    Vector3 normalized = MathPlugin::Vector3Normalize(v1);
+    float length = math::MathPlugin::Vector3Length(v1);
+    Vector3 normalized = math::MathPlugin::Vector3Normalize(v1);
     
     std::cout << "Vector methods:" << std::endl;
     std::cout << "  v1.Dot(v2) = " << dot << std::endl;

@@ -40,7 +40,7 @@ void PrintLoadedPlugins(PluginManager& pluginManager) {
     
     std::cout << "Loaded Plugins (" << pluginNames.size() << " total):" << std::endl;
     for (const auto& name : pluginNames) {
-        IPlugin* plugin = pluginManager.GetPlugin(name);
+        auto plugin = pluginManager.GetPlugin(name);
         if (plugin) {
             std::cout << "  - " << name << " (" << plugin->GetPluginInfo().displayName << ")" << std::endl;
         } else {
@@ -55,7 +55,7 @@ void TestMathPlugin(PluginManager& pluginManager) {
     std::cout << "Testing MathPlugin..." << std::endl;
     
     // Get the MathPlugin
-    IPlugin* plugin = pluginManager.GetPlugin("MathPlugin");
+    auto plugin = pluginManager.GetPlugin("MathPlugin");
     if (!plugin) {
         std::cout << "Error: MathPlugin not found!" << std::endl;
         return;
@@ -75,7 +75,7 @@ void TestLogPlugin(PluginManager& pluginManager) {
     std::cout << "Testing LogPlugin..." << std::endl;
     
     // Get the LogPlugin
-    IPlugin* plugin = pluginManager.GetPlugin("LogPlugin");
+    auto plugin = pluginManager.GetPlugin("LogPlugin");
     if (!plugin) {
         std::cout << "Error: LogPlugin not found!" << std::endl;
         return;
@@ -95,7 +95,7 @@ void TestScriptPlugin(PluginManager& pluginManager) {
     std::cout << "Testing ScriptPlugin..." << std::endl;
     
     // Get the ScriptPlugin
-    IPlugin* plugin = pluginManager.GetPlugin("ScriptPlugin");
+    auto plugin = pluginManager.GetPlugin("ScriptPlugin");
     if (!plugin) {
         std::cout << "Error: ScriptPlugin not found!" << std::endl;
         return;

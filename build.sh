@@ -127,7 +127,7 @@ fi
 
 # Build project
 echo "Building project..."
-cmake --build . --config $BUILD_TYPE
+cmake --build . --config $BUILD_TYPE -j
 
 if [ $? -ne 0 ]; then
     echo "Error: Build failed."

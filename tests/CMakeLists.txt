@@ -37,6 +37,7 @@ target_include_directories(manual_test PRIVATE
     ${CMAKE_SOURCE_DIR}/src/Plugins/ScriptPlugin/include
     ${CMAKE_SOURCE_DIR}/src/Plugins/ScriptPlugin/PythonPlugin/include
     ${CMAKE_SOURCE_DIR}/src/Plugins/ScriptPlugin/LuaPlugin/include
+    ${CMAKE_SOURCE_DIR}/src/ScriptObjectWrapper/include
     ${rtm_SOURCE_DIR}/includes
 )
 
@@ -79,6 +80,7 @@ target_include_directories(PluginSystemTests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/Plugins/ScriptPlugin/include
     ${CMAKE_SOURCE_DIR}/src/Plugins/ScriptPlugin/PythonPlugin/include
     ${CMAKE_SOURCE_DIR}/src/Plugins/ScriptPlugin/LuaPlugin/include
+    ${CMAKE_SOURCE_DIR}/src/ScriptObjectWrapper/include
     ${rtm_SOURCE_DIR}/includes
 )
 

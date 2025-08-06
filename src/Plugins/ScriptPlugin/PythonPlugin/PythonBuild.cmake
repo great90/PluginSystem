@@ -184,7 +184,7 @@ if(BUILD_PYTHON_FROM_SOURCE)
             
             # Configure Python build
             execute_process(
-                COMMAND ${PYTHON_SOURCE_DIR}/configure --prefix=${PYTHON_BUILD_DIR} --enable-shared --enable-framework
+                COMMAND ${PYTHON_SOURCE_DIR}/configure --prefix=${PYTHON_BUILD_DIR} --enable-shared
                 WORKING_DIRECTORY ${PYTHON_BUILD_DIR}
                 RESULT_VARIABLE PYTHON_CONFIGURE_RESULT
             )

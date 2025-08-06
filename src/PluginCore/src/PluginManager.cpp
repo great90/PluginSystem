@@ -7,6 +7,10 @@
 #include <filesystem>
 #include <algorithm>
 #include <stdexcept>
+#include <iostream>
+#include <chrono>
+#include <iomanip>
+#include <sstream>
 
 // Platform-specific library loading
 #ifdef _WIN32
@@ -29,75 +33,168 @@
 
 namespace fs = std::filesystem;
 
-PluginManager::PluginManager() : pluginDirectory_("./plugins") {
+// PluginLibrary RAII implementation
+PluginManager::PluginLibrary::~PluginLibrary() {
+    if (instance) {
+        try {
+            instance->Shutdown();
+        } catch (...) {
+            // Ignore exceptions during shutdown
+        }
+        instance.reset();
+    }
+    
+    if (handle) {
+        CLOSE_LIBRARY(handle);
+        handle = nullptr;
+    }
+}
+
+PluginManager::PluginLibrary::PluginLibrary(PluginLibrary&& other) noexcept
+    : handle(other.handle)
+    , instance(std::move(other.instance))
+    , createFunc(other.createFunc)
+    , infoFunc(other.infoFunc)
+    , path(std::move(other.path)) {
+    other.handle = nullptr;
+    other.createFunc = nullptr;
+    other.infoFunc = nullptr;
+}
+
+PluginManager::PluginLibrary& PluginManager::PluginLibrary::operator=(PluginLibrary&& other) noexcept {
+    if (this != &other) {
+        // Clean up current resources
+        if (instance) {
+            try {
+                instance->Shutdown();
+            } catch (...) {}
+            instance.reset();
+        }
+        if (handle) {
+            CLOSE_LIBRARY(handle);
+        }
+        
+        // Move from other
+        handle = other.handle;
+        instance = std::move(other.instance);
+        createFunc = other.createFunc;
+        infoFunc = other.infoFunc;
+        path = std::move(other.path);
+        
+        // Reset other
+        other.handle = nullptr;
+        other.createFunc = nullptr;
+        other.infoFunc = nullptr;
+    }
+    return *this;
+}
+
+PluginManager::PluginManager() 
+    : pluginDirectory_("./plugins")
+    , loggingEnabled_(false) {
+    LogMessage("INFO", "PluginManager initialized");
 }
 
 PluginManager::~PluginManager() {
-    UnloadAllPlugins();
+    try {
+        UnloadAllPlugins();
+        LogMessage("INFO", "PluginManager destroyed");
+    } catch (...) {
+        // Ignore exceptions during destruction
+    }
 }
 
 void PluginManager::SetPluginDirectory(const std::string& directory) {
+    std::lock_guard<std::mutex> lock(mutex_);
     pluginDirectory_ = directory;
+    LogMessage("INFO", "Plugin directory set to: " + directory);
 }
 
 std::string PluginManager::GetPluginDirectory() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     return pluginDirectory_;
 }
 
 bool PluginManager::LoadPlugin(const std::string& pluginPath) {
-    // Check if file exists
-    if (!fs::exists(pluginPath)) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    
+    try {
+        // Check if file exists
+        if (!fs::exists(pluginPath)) {
+            SetLastError("Plugin file does not exist: " + pluginPath);
+            return false;
+        }
+        
+        LogMessage("INFO", "Loading plugin: " + pluginPath);
+        
+        // Load the library
+        void* handle = LOAD_LIBRARY(pluginPath.c_str());
+        if (!handle) {
+            SetLastError("Failed to load library: " + pluginPath);
+            return false;
+        }
+        
+        // Get the plugin creation and info functions
+        CreatePluginFunc createFunc = reinterpret_cast<CreatePluginFunc>(
+            GET_PROC_ADDRESS(handle, "CreatePlugin"));
+        GetPluginInfoFunc infoFunc = reinterpret_cast<GetPluginInfoFunc>(
+            GET_PROC_ADDRESS(handle, "GetPluginInfo"));
+        
+        // Validate that we got the required functions
+        if (!createFunc || !infoFunc) {
+            CLOSE_LIBRARY(handle);
+            SetLastError("Plugin missing required functions: " + pluginPath);
+            return false;
+        }
+        
+        // Get plugin info to check if it's already loaded
+        const PluginInfo& info = infoFunc();
+        if (loadedPlugins_.find(info.name) != loadedPlugins_.end()) {
+            CLOSE_LIBRARY(handle);
+            SetLastError("Plugin already loaded: " + info.name);
+            return false;
+        }
+        
+        // Create the plugin instance
+        IPlugin* rawInstance = createFunc();
+        if (!rawInstance) {
+            CLOSE_LIBRARY(handle);
+            SetLastError("Failed to create plugin instance: " + info.name);
+            return false;
+        }
+        
+        // Wrap in shared_ptr with custom deleter
+        std::shared_ptr<IPlugin> instance(rawInstance, [](IPlugin* p) {
+            delete p;
+        });
+        
+        // Store the plugin
+        PluginLibrary library;
+        library.handle = handle;
+        library.instance = instance;
+        library.createFunc = createFunc;
+        library.infoFunc = infoFunc;
+        library.path = pluginPath;
+        
+        loadedPlugins_[info.name] = std::move(library);
+        
+        // Add dependencies to the resolver
+        for (const auto& dep : info.dependencies) {
+            dependencyResolver_.AddDependency(info.name, dep.name, dep.optional);
+        }
+        
+        LogMessage("INFO", "Successfully loaded plugin: " + info.name);
+        NotifyLifecycleCallbacks(info.name, "loaded");
+        
+        return true;
+        
+    } catch (const std::exception& e) {
+        SetLastError("Exception during plugin loading: " + std::string(e.what()));
+        return false;
+    } catch (...) {
+        SetLastError("Unknown exception during plugin loading");
         return false;
     }
-    
-    // Load the library
-    void* handle = LOAD_LIBRARY(pluginPath.c_str());
-    if (!handle) {
-        return false;
-    }
-    
-    // Get the plugin creation and info functions
-    CreatePluginFunc createFunc = reinterpret_cast<CreatePluginFunc>(
-        GET_PROC_ADDRESS(handle, "CreatePlugin"));
-    GetPluginInfoFunc infoFunc = reinterpret_cast<GetPluginInfoFunc>(
-        GET_PROC_ADDRESS(handle, "GetPluginInfo"));
-    
-    // Validate that we got the required functions
-    if (!createFunc || !infoFunc) {
-        CLOSE_LIBRARY(handle);
-        return false;
-    }
-    
-    // Get plugin info to check if it's already loaded
-    const PluginInfo& info = infoFunc();
-    if (IsPluginLoaded(info.name)) {
-        CLOSE_LIBRARY(handle);
-        return false;
-    }
-    
-    // Create the plugin instance
-    IPlugin* instance = createFunc();
-    if (!instance) {
-        CLOSE_LIBRARY(handle);
-        return false;
-    }
-    
-    // Store the plugin
-    PluginLibrary library;
-    library.handle = handle;
-    library.instance = instance;
-    library.createFunc = createFunc;
-    library.infoFunc = infoFunc;
-    library.path = pluginPath;
-    
-    loadedPlugins_[info.name] = library;
-    
-    // Add dependencies to the resolver
-    for (const auto& dep : info.dependencies) {
-        dependencyResolver_.AddDependency(info.name, dep.name, dep.optional);
-    }
-    
-    return true;
 }
 
 int PluginManager::LoadAllPlugins() {
@@ -146,36 +243,64 @@ bool PluginManager::UnloadPlugin(const std::string& pluginName) {
 }
 
 void PluginManager::UnloadAllPlugins() {
-    // Get plugin names in reverse dependency order for proper shutdown
-    std::vector<std::string> pluginNames = GetLoadedPluginNames();
-    std::vector<std::string> reverseOrder;
+    std::lock_guard<std::mutex> lock(mutex_);
     
     try {
-        reverseOrder = dependencyResolver_.ResolveLoadOrder(pluginNames);
-        std::reverse(reverseOrder.begin(), reverseOrder.end());
-    } catch (const std::exception&) {
-        // If there's a dependency issue, just use the unordered list
-        reverseOrder = pluginNames;
-    }
-    
-    // Shutdown all plugins first
-    for (const auto& name : reverseOrder) {
-        auto it = loadedPlugins_.find(name);
-        if (it != loadedPlugins_.end()) {
-            it->second.instance->Shutdown();
+        LogMessage("INFO", "Unloading all plugins");
+        
+        // Get plugin names in reverse dependency order for proper shutdown
+        std::vector<std::string> pluginNames;
+        pluginNames.reserve(loadedPlugins_.size());
+        for (const auto& pair : loadedPlugins_) {
+            pluginNames.push_back(pair.first);
         }
+        
+        std::vector<std::string> reverseOrder;
+        
+        try {
+            reverseOrder = dependencyResolver_.ResolveLoadOrder(pluginNames);
+            std::reverse(reverseOrder.begin(), reverseOrder.end());
+        } catch (const std::exception& e) {
+            // If there's a dependency issue, just use the unordered list
+            LogMessage("WARNING", "Dependency resolution failed during unload: " + std::string(e.what()));
+            reverseOrder = pluginNames;
+        }
+        
+        // Shutdown all plugins first (RAII will handle cleanup)
+        for (const auto& name : reverseOrder) {
+            auto it = loadedPlugins_.find(name);
+            if (it != loadedPlugins_.end()) {
+                try {
+                    if (it->second.instance) {
+                        it->second.instance->Shutdown();
+                        LogMessage("INFO", "Shutdown plugin: " + name);
+                        NotifyLifecycleCallbacks(name, "unloaded");
+                    }
+                } catch (const std::exception& e) {
+                    LogMessage("ERROR", "Exception during plugin shutdown: " + name + " - " + e.what());
+                } catch (...) {
+                    LogMessage("ERROR", "Unknown exception during plugin shutdown: " + name);
+                }
+            }
+        }
+        
+        // Clear all plugins (RAII destructors will handle library cleanup)
+        loadedPlugins_.clear();
+        dependencyResolver_.Clear();
+        
+        LogMessage("INFO", "All plugins unloaded successfully");
+        
+    } catch (const std::exception& e) {
+        SetLastError("Exception during unload all plugins: " + std::string(e.what()));
+        LogMessage("ERROR", "Exception during unload all plugins: " + std::string(e.what()));
+    } catch (...) {
+        SetLastError("Unknown exception during unload all plugins");
+        LogMessage("ERROR", "Unknown exception during unload all plugins");
     }
-    
-    // Then close all libraries
-    for (auto& pair : loadedPlugins_) {
-        CloseLibrary(pair.second);
-    }
-    
-    loadedPlugins_.clear();
-    dependencyResolver_.Clear();
 }
 
-IPlugin* PluginManager::GetPlugin(const std::string& pluginName) {
+std::shared_ptr<IPlugin> PluginManager::GetPlugin(const std::string& pluginName) {
+    std::lock_guard<std::mutex> lock(mutex_);
     auto it = loadedPlugins_.find(pluginName);
     if (it != loadedPlugins_.end()) {
         return it->second.instance;
@@ -183,7 +308,17 @@ IPlugin* PluginManager::GetPlugin(const std::string& pluginName) {
     return nullptr;
 }
 
+std::weak_ptr<IPlugin> PluginManager::GetPluginWeak(const std::string& pluginName) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = loadedPlugins_.find(pluginName);
+    if (it != loadedPlugins_.end()) {
+        return std::weak_ptr<IPlugin>(it->second.instance);
+    }
+    return std::weak_ptr<IPlugin>();
+}
+
 std::vector<std::string> PluginManager::GetLoadedPluginNames() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     std::vector<std::string> names;
     names.reserve(loadedPlugins_.size());
     
@@ -195,6 +330,7 @@ std::vector<std::string> PluginManager::GetLoadedPluginNames() const {
 }
 
 bool PluginManager::IsPluginLoaded(const std::string& pluginName) const {
+    std::lock_guard<std::mutex> lock(mutex_);
     return loadedPlugins_.find(pluginName) != loadedPlugins_.end();
 }
 
@@ -319,28 +455,104 @@ bool PluginManager::ResolveDependencies() {
     }
 }
 
-void PluginManager::CloseLibrary(PluginLibrary& library) {
-    delete library.instance;
-    library.instance = nullptr;
-    
-    if (library.handle) {
-        CLOSE_LIBRARY(library.handle);
-        library.handle = nullptr;
+void PluginManager::CloseLibrary(PluginLibrary& library) noexcept {
+    try {
+        if (library.instance) {
+            library.instance->Shutdown();
+            library.instance.reset();
+        }
+        
+        if (library.handle) {
+            CLOSE_LIBRARY(library.handle);
+            library.handle = nullptr;
+        }
+    } catch (...) {
+        // Ignore all exceptions during cleanup
     }
 }
 
 std::vector<std::string> PluginManager::FindPluginFiles() const {
     std::vector<std::string> pluginFiles;
     
-    if (!fs::exists(pluginDirectory_) || !fs::is_directory(pluginDirectory_)) {
-        return pluginFiles;
-    }
-    
-    for (const auto& entry : fs::directory_iterator(pluginDirectory_)) {
-        if (entry.is_regular_file() && entry.path().extension() == PLUGIN_EXTENSION) {
-            pluginFiles.push_back(entry.path().string());
+    try {
+        if (!fs::exists(pluginDirectory_) || !fs::is_directory(pluginDirectory_)) {
+            LogMessage("WARNING", "Plugin directory does not exist or is not a directory: " + pluginDirectory_);
+            return pluginFiles;
         }
+        
+        for (const auto& entry : fs::directory_iterator(pluginDirectory_)) {
+            if (entry.is_regular_file() && entry.path().extension() == PLUGIN_EXTENSION) {
+                pluginFiles.push_back(entry.path().string());
+            }
+        }
+        
+        LogMessage("INFO", "Found " + std::to_string(pluginFiles.size()) + " plugin files");
+        
+    } catch (const std::exception& e) {
+        LogMessage("ERROR", "Exception while finding plugin files: " + std::string(e.what()));
     }
     
     return pluginFiles;
+}
+
+void PluginManager::LogMessage(const std::string& level, const std::string& message) const {
+    if (!loggingEnabled_) return;
+    
+    auto now = std::chrono::system_clock::now();
+    auto time_t = std::chrono::system_clock::to_time_t(now);
+    
+    std::stringstream ss;
+    ss << "[" << std::put_time(std::localtime(&time_t), "%Y-%m-%d %H:%M:%S") << "] ";
+    ss << "[" << level << "] PluginManager: " << message;
+    
+    std::cout << ss.str() << std::endl;
+}
+
+void PluginManager::NotifyLifecycleCallbacks(const std::string& pluginName, const std::string& event) const {
+    for (const auto& callback : lifecycleCallbacks_) {
+        try {
+            callback(pluginName, event);
+        } catch (const std::exception& e) {
+            LogMessage("ERROR", "Exception in lifecycle callback: " + std::string(e.what()));
+        } catch (...) {
+            LogMessage("ERROR", "Unknown exception in lifecycle callback");
+        }
+    }
+}
+
+void PluginManager::SetLastError(const std::string& error) const {
+    lastError_ = error;
+}
+
+void PluginManager::RegisterLifecycleCallback(const PluginLifecycleCallback& callback) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    lifecycleCallbacks_.push_back(callback);
+}
+
+std::string PluginManager::GetLastError() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return lastError_;
+}
+
+void PluginManager::SetLoggingEnabled(bool enabled) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    loggingEnabled_ = enabled;
+    LogMessage("INFO", "Logging " + std::string(enabled ? "enabled" : "disabled"));
+}
+
+PluginResult<std::vector<std::string>> PluginManager::GetLoadOrder() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    
+    try {
+        std::vector<std::string> pluginNames;
+        pluginNames.reserve(loadedPlugins_.size());
+        for (const auto& pair : loadedPlugins_) {
+            pluginNames.push_back(pair.first);
+        }
+        
+        return dependencyResolver_.ResolveLoadOrder(pluginNames);
+    } catch (const std::exception& e) {
+        SetLastError("Failed to resolve load order: " + std::string(e.what()));
+        return std::nullopt;
+    }
 }

@@ -11,13 +11,22 @@
 #include <string>
 #include <filesystem>
 
+// Define plugin extension based on platform
+#ifdef _WIN32
+#define PLUGIN_EXTENSION ".dll"
+#elif defined(__APPLE__)
+#define PLUGIN_EXTENSION ".dylib"
+#else
+#define PLUGIN_EXTENSION ".so"
+#endif
+
 // Test fixture for ScriptPlugin tests
 class ScriptPluginTest : public ::testing::Test {
 protected:
     PluginManager pluginManager;
-    ScriptPlugin* scriptPlugin;
-    PythonPlugin* pythonPlugin;
-    LuaPlugin* luaPlugin;
+    std::shared_ptr<ScriptPlugin> scriptPlugin;
+    std::shared_ptr<PythonPlugin> pythonPlugin;
+    std::shared_ptr<LuaPlugin> luaPlugin;
     std::string pythonExamplePath;
     std::string luaExamplePath;
     
@@ -46,9 +55,9 @@ protected:
     void TearDown() override {
         // Unload all plugins to clean up
         pluginManager.UnloadAllPlugins();
-        scriptPlugin = nullptr;
-        pythonPlugin = nullptr;
-        luaPlugin = nullptr;
+        scriptPlugin.reset();
+        pythonPlugin.reset();
+        luaPlugin.reset();
     }
 };
 

@@ -7,9 +7,11 @@
 
 #include "ScriptPlugin.h"
 #include "PythonPluginExport.h"
+#include "ScriptObjectWrapper.h"
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <memory>
 
 // Forward declarations to avoid including Python headers in this header
 typedef struct _object PyObject;
@@ -131,6 +133,25 @@ public:
      */
     template<typename T>
     bool RegisterClass(const std::string& name);
+    
+    /**
+     * @brief Register a shared object with Python using ScriptObjectWrapper
+     * 
+     * @tparam T Type of the object
+     * @param name Name to use for the object in Python
+     * @param obj Shared pointer to the object
+     * @return true if registration was successful, false otherwise
+     */
+    template<typename T>
+    bool RegisterSharedObject(const std::string& name, std::shared_ptr<T> obj);
+    
+    /**
+     * @brief Register MathPlugin instance with Python
+     * 
+     * @param mathPlugin Shared pointer to MathPlugin instance
+     * @return true if registration was successful, false otherwise
+     */
+    bool RegisterMathPlugin(std::shared_ptr<class MathPlugin> mathPlugin);
 
 private:
     /**
@@ -166,10 +187,24 @@ private:
      */
     bool RegisterMathFunctions();
     
+    /**
+     * @brief Clean up script object wrappers
+     */
+    void CleanupScriptObjects();
+    
+    /**
+     * @brief Register cleanup callback for script objects
+     */
+    void RegisterCleanupCallback();
+    
     pybind11::module_* mainModule_;      ///< Python's __main__ module
     pybind11::dict* mainNamespace_;   ///< Python's __main__ module namespace
     PyThreadState* threadState_; ///< Python thread state
     bool initialized_;          ///< Whether the Python interpreter is initialized
+    
+    // Script object management
+    std::vector<std::function<void()>> scriptObjectCleanups_; ///< Cleanup functions for script objects
+    mutable std::mutex scriptObjectMutex_; ///< Mutex for script object operations
     
     static PluginInfo pluginInfo_; ///< Static plugin information
 };
