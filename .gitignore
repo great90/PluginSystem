@@ -2,6 +2,7 @@
 build/
 out/
 cmake-build-*/
+.cache/
 
 # IDE files
 .vs/
@@ -57,3 +58,6 @@ __pycache__/
 # OS specific files
 .DS_Store
 Thumbs.db
+
+*.log
+

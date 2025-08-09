@@ -35,12 +35,9 @@ namespace fs = std::filesystem;
 
 // PluginLibrary RAII implementation
 PluginManager::PluginLibrary::~PluginLibrary() {
+    // Note: Shutdown is handled by UnloadAllPlugins, not here
+    // to avoid multiple shutdown calls
     if (instance) {
-        try {
-            instance->Shutdown();
-        } catch (...) {
-            // Ignore exceptions during shutdown
-        }
         instance.reset();
     }
     
@@ -65,9 +62,6 @@ PluginManager::PluginLibrary& PluginManager::PluginLibrary::operator=(PluginLibr
     if (this != &other) {
         // Clean up current resources
         if (instance) {
-            try {
-                instance->Shutdown();
-            } catch (...) {}
             instance.reset();
         }
         if (handle) {
@@ -135,10 +129,13 @@ bool PluginManager::LoadPlugin(const std::string& pluginPath) {
         }
         
         // Get the plugin creation and info functions
+        std::cout << "PluginManager: Looking for CreatePlugin symbol..." << std::endl;
         CreatePluginFunc createFunc = reinterpret_cast<CreatePluginFunc>(
             GET_PROC_ADDRESS(handle, "CreatePlugin"));
+        std::cout << "PluginManager: CreatePlugin function pointer: " << (void*)createFunc << std::endl;
         GetPluginInfoFunc infoFunc = reinterpret_cast<GetPluginInfoFunc>(
             GET_PROC_ADDRESS(handle, "GetPluginInfo"));
+        std::cout << "PluginManager: GetPluginInfo function pointer: " << (void*)infoFunc << std::endl;
         
         // Validate that we got the required functions
         if (!createFunc || !infoFunc) {
@@ -156,16 +153,25 @@ bool PluginManager::LoadPlugin(const std::string& pluginPath) {
         }
         
         // Create the plugin instance
+        std::cout << "PluginManager: About to call createFunc() for " << info.name << std::endl;
         IPlugin* rawInstance = createFunc();
+        std::cout << "PluginManager: createFunc() returned: " << rawInstance << std::endl;
         if (!rawInstance) {
             CLOSE_LIBRARY(handle);
             SetLastError("Failed to create plugin instance: " + info.name);
             return false;
         }
         
-        // Wrap in shared_ptr with custom deleter
+        // Wrap in shared_ptr with custom deleter that safely handles plugin deletion
         std::shared_ptr<IPlugin> instance(rawInstance, [](IPlugin* p) {
-            delete p;
+            try {
+                // Only delete if the plugin is still valid
+                if (p) {
+                    delete p;
+                }
+            } catch (...) {
+                // Ignore exceptions during cleanup to prevent crashes
+            }
         });
         
         // Store the plugin
@@ -281,6 +287,18 @@ void PluginManager::UnloadAllPlugins() {
                 } catch (...) {
                     LogMessage("ERROR", "Unknown exception during plugin shutdown: " + name);
                 }
+            }
+        }
+        
+        // Explicitly reset all shared_ptr instances before clearing the map
+        // This ensures plugin objects are deleted before libraries are unloaded
+        for (auto& pair : loadedPlugins_) {
+            try {
+                if (pair.second.instance) {
+                    pair.second.instance.reset();
+                }
+            } catch (...) {
+                // Ignore exceptions during cleanup
             }
         }
         
@@ -458,7 +476,6 @@ bool PluginManager::ResolveDependencies() {
 void PluginManager::CloseLibrary(PluginLibrary& library) noexcept {
     try {
         if (library.instance) {
-            library.instance->Shutdown();
             library.instance.reset();
         }
         

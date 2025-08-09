@@ -48,6 +48,9 @@ if(BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
+# Add examples
+add_subdirectory(examples)
+
 # Installation rules
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/scripts/ DESTINATION scripts)
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/plugins/ DESTINATION plugins)

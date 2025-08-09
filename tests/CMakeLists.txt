@@ -19,8 +19,9 @@ FetchContent_MakeAvailable(googletest)
 # Include googletest headers
 include_directories(${googletest_SOURCE_DIR}/googletest/include)
 
-# Define test sources
+# Define test sources (exclude manual_test.cpp as it has its own main function)
 file(GLOB TEST_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
+list(REMOVE_ITEM TEST_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/manual_test.cpp)
 
 # Add manual test executable
 add_executable(manual_test
@@ -34,6 +35,7 @@ target_include_directories(manual_test PRIVATE
     ${CMAKE_SOURCE_DIR}/src/PluginCore/include
     ${CMAKE_SOURCE_DIR}/src/Plugins/LogPlugin/include
     ${CMAKE_SOURCE_DIR}/src/Plugins/MathPlugin/include
+    ${CMAKE_SOURCE_DIR}/src/Plugins/RenderingPlugin/include
     ${CMAKE_SOURCE_DIR}/src/Plugins/ScriptPlugin/include
     ${CMAKE_SOURCE_DIR}/src/Plugins/ScriptPlugin/PythonPlugin/include
     ${CMAKE_SOURCE_DIR}/src/Plugins/ScriptPlugin/LuaPlugin/include
@@ -62,6 +64,7 @@ add_custom_command(TARGET manual_test POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "$<TARGET_FILE:LogPlugin>"
         "$<TARGET_FILE:MathPlugin>"
+        "$<TARGET_FILE:RenderingPlugin>"
         "$<TARGET_FILE:ScriptPlugin>"
         "$<TARGET_FILE:PythonPlugin>"
         "$<TARGET_FILE:LuaPlugin>"
@@ -77,6 +80,7 @@ target_include_directories(PluginSystemTests PRIVATE
     ${CMAKE_SOURCE_DIR}/src/PluginCore/include
     ${CMAKE_SOURCE_DIR}/src/Plugins/LogPlugin/include
     ${CMAKE_SOURCE_DIR}/src/Plugins/MathPlugin/include
+    ${CMAKE_SOURCE_DIR}/src/Plugins/RenderingPlugin/include
     ${CMAKE_SOURCE_DIR}/src/Plugins/ScriptPlugin/include
     ${CMAKE_SOURCE_DIR}/src/Plugins/ScriptPlugin/PythonPlugin/include
     ${CMAKE_SOURCE_DIR}/src/Plugins/ScriptPlugin/LuaPlugin/include
@@ -89,6 +93,7 @@ target_link_libraries(PluginSystemTests PRIVATE
     PluginCore
     MathPlugin
     LogPlugin
+    RenderingPlugin
     ScriptPlugin
     PythonPlugin
     LuaPlugin
@@ -109,6 +114,7 @@ add_custom_command(TARGET PluginSystemTests POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "$<TARGET_FILE:LogPlugin>"
         "$<TARGET_FILE:MathPlugin>"
+        "$<TARGET_FILE:RenderingPlugin>"
         "$<TARGET_FILE:ScriptPlugin>"
         "$<TARGET_FILE:PythonPlugin>"
         "$<TARGET_FILE:LuaPlugin>"
