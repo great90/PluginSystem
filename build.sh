@@ -5,13 +5,23 @@ echo "==================================="
 echo "    Plugin System Build Script"
 echo "==================================="
 
+# Detect operating system and set appropriate generator
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    # macOS detected, use Xcode generator
+    DEFAULT_GENERATOR="Xcode"
+    echo "macOS detected, using Xcode generator by default."
+else
+    # Other Unix-like systems, use Unix Makefiles
+    DEFAULT_GENERATOR="Unix Makefiles"
+fi
+
 # Set default values
 BUILD_DIR="build"
 BUILD_TYPE="Debug"
 BUILD_SHARED="ON"
 BUILD_EXAMPLES="ON"
 BUILD_TESTS="ON"
-GENERATOR="Unix Makefiles"
+GENERATOR="$DEFAULT_GENERATOR"
 FORCE_CONFIG="OFF"
 
 # Display help information
@@ -26,7 +36,7 @@ show_help() {
     echo "  --shared ON/OFF     Whether to build shared libraries (default: ON)"
     echo "  --examples ON/OFF   Whether to build examples (default: ON)"
     echo "  --tests ON/OFF      Whether to build tests (default: OFF)"
-    echo "  --generator GEN     Set CMake generator (default: \"Unix Makefiles\")"
+    echo "  --generator GEN     Set CMake generator (default: auto-detected based on OS)"
     echo "  --force, -f         Force CMake reconfiguration even if build directory exists"
     echo ""
     echo "Examples:"
