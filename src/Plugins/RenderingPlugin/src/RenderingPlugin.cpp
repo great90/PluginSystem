@@ -66,40 +66,72 @@ bool RenderingPlugin::Initialize() {
 }
 
 void RenderingPlugin::Shutdown() {
-    // Prevent multiple shutdowns
-    if (!initialized_ && !renderSystem_) {
+    // Prevent multiple shutdowns - check all critical resources
+    if (!initialized_ && !renderSystem_ && !swapChain_) {
         return;
     }
+    
+    std::cout << "RenderingPlugin::Shutdown() - Starting shutdown process..." << std::endl;
     
     try {
         // Clear surface reference first
         surface_ = nullptr;
+        std::cout << "RenderingPlugin::Shutdown() - Surface cleared" << std::endl;
         
-        // Release command buffer before swap chain
+        // Release command buffer first (before swap chain and render system)
         if (commandBuffer_ && renderSystem_) {
+            std::cout << "RenderingPlugin::Shutdown() - Releasing command buffer..." << std::endl;
             renderSystem_->Release(*commandBuffer_);
             commandBuffer_ = nullptr;
+            std::cout << "RenderingPlugin::Shutdown() - Command buffer released" << std::endl;
         }
         
-        // Reset smart pointer - it will automatically clean up the SwapChain
+        // Reset swap chain BEFORE render system cleanup to ensure proper destruction order
         if (swapChain_) {
+            std::cout << "RenderingPlugin::Shutdown() - Resetting swap chain..." << std::endl;
             swapChain_.reset();
+            swapChain_ = nullptr;  // Explicitly set to nullptr after reset
+            std::cout << "RenderingPlugin::Shutdown() - Swap chain reset completed" << std::endl;
         }
         
-        // Clean up render system last
+        // Clean up render system AFTER swap chain to avoid dependency issues
         if (renderSystem_) {
+            std::cout << "RenderingPlugin::Shutdown() - Deleting render system..." << std::endl;
             delete renderSystem_;
             renderSystem_ = nullptr;
+            std::cout << "RenderingPlugin::Shutdown() - Render system deleted" << std::endl;
         }
         
         initialized_ = false;
         currentAPI_ = RenderAPI::None;
+        std::cout << "RenderingPlugin::Shutdown() - Shutdown completed successfully" << std::endl;
+        
     } catch (const std::exception& e) {
         // Ignore exceptions during shutdown to prevent crashes
         std::cerr << "Exception during RenderingPlugin shutdown: " << e.what() << std::endl;
+        // Still mark as shutdown to prevent further issues
+        initialized_ = false;
+        currentAPI_ = RenderAPI::None;
+        renderSystem_ = nullptr;
+        commandBuffer_ = nullptr;
+        if (swapChain_) {
+            swapChain_.reset();
+            swapChain_ = nullptr;
+        }
+        surface_ = nullptr;
     } catch (...) {
         // Ignore all exceptions during shutdown
         std::cerr << "Unknown exception during RenderingPlugin shutdown" << std::endl;
+        // Still mark as shutdown to prevent further issues
+        initialized_ = false;
+        currentAPI_ = RenderAPI::None;
+        renderSystem_ = nullptr;
+        commandBuffer_ = nullptr;
+        if (swapChain_) {
+            swapChain_.reset();
+            swapChain_ = nullptr;
+        }
+        surface_ = nullptr;
     }
 }
 
@@ -216,18 +248,20 @@ bool RenderingPlugin::InitializeRenderSystem(RenderAPI api) {
     }
     
     // Add platform-specific fallback APIs
-    #ifdef __APPLE__
-    if (api != RenderAPI::Metal) apisToTry.push_back(RenderAPI::Metal);
-    if (api != RenderAPI::OpenGL) apisToTry.push_back(RenderAPI::OpenGL);
-    #elif defined(_WIN32)
-    if (api != RenderAPI::Direct3D11) apisToTry.push_back(RenderAPI::Direct3D11);
-    if (api != RenderAPI::Direct3D12) apisToTry.push_back(RenderAPI::Direct3D12);
-    if (api != RenderAPI::Vulkan) apisToTry.push_back(RenderAPI::Vulkan);
-    if (api != RenderAPI::OpenGL) apisToTry.push_back(RenderAPI::OpenGL);
-    #else
-    if (api != RenderAPI::Vulkan) apisToTry.push_back(RenderAPI::Vulkan);
-    if (api != RenderAPI::OpenGL) apisToTry.push_back(RenderAPI::OpenGL);
-    #endif
+#ifdef __APPLE__
+    if (api != RenderAPI::Metal)
+        apisToTry.push_back(RenderAPI::Metal);
+#endif
+    if (api != RenderAPI::Vulkan)
+        apisToTry.push_back(RenderAPI::Vulkan);
+    if (api != RenderAPI::OpenGL)
+        apisToTry.push_back(RenderAPI::OpenGL);
+#if defined(_WIN32)
+    if (api != RenderAPI::Direct3D11)
+        apisToTry.push_back(RenderAPI::Direct3D11);
+    if (api != RenderAPI::Direct3D12)
+        apisToTry.push_back(RenderAPI::Direct3D12);
+#endif
     
     std::string lastError;
     
@@ -384,6 +418,28 @@ bool RenderingPlugin::CreateWindow(const WindowDesc& desc) {
         
         // Store window description
         windowDesc_ = desc;
+        
+#ifdef __APPLE__
+        // macOS特定：强制窗口显示到前台
+        try {
+            if (surface_) {
+                // 处理事件以确保窗口正确显示
+                LLGL::Surface::ProcessEvents();
+                
+                // 短暂延迟让窗口系统处理
+                std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                
+                // 再次处理事件
+                LLGL::Surface::ProcessEvents();
+                
+                std::cout << "CreateWindow: macOS window forced to front" << std::endl;
+            }
+        } catch (const std::exception& e) {
+            std::cout << "CreateWindow: Warning - failed to force window to front: " << e.what() << std::endl;
+        } catch (...) {
+            std::cout << "CreateWindow: Warning - unknown error forcing window to front" << std::endl;
+        }
+#endif
         
         // macOS-specific: Force window to front
         try {
@@ -1121,6 +1177,18 @@ bool RenderingPlugin::IsSoftwareRenderingEnabled() const {
 
 bool RenderingPlugin::IsHeadlessMode() const {
     return currentMode_ == RenderingMode::Headless;
+}
+
+LLGL::RenderSystem* RenderingPlugin::GetRenderSystem() const {
+    return renderSystem_;
+}
+
+LLGL::SwapChain* RenderingPlugin::GetSwapChain() const {
+    return swapChain_.get();
+}
+
+LLGL::CommandBuffer* RenderingPlugin::GetCommandBuffer() const {
+    return commandBuffer_;
 }
 
 // Plugin export functions implementation

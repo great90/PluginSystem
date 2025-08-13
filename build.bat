@@ -15,6 +15,7 @@ set BUILD_TESTS=ON
 set GENERATOR="Visual Studio 17 2022"
 set ARCH=x64
 set FORCE_CONFIG=OFF
+set REBUILD=OFF
 
 :: Parse command line arguments
 :parse_args
@@ -28,6 +29,16 @@ if /i "%~1"=="--force" (
 )
 if /i "%~1"=="-f" (
     set FORCE_CONFIG=ON
+    shift
+    goto :parse_args
+)
+if /i "%~1"=="--rebuild" (
+    set REBUILD=ON
+    shift
+    goto :parse_args
+)
+if /i "%~1"=="-r" (
+    set REBUILD=ON
     shift
     goto :parse_args
 )
@@ -113,6 +124,23 @@ if not exist %BUILD_DIR% (
     set FORCE_CONFIG=ON
 )
 
+:: Handle rebuild option
+if /i "%REBUILD%"=="ON" (
+    echo Rebuilding: cleaning build directory (preserving _deps)...
+    if exist %BUILD_DIR% (
+        pushd %BUILD_DIR%
+        for /f "delims=" %%i in ('dir /b /a-d 2^>nul') do (
+            if /i not "%%i"=="_deps" del /q "%%i" 2>nul
+        )
+        for /f "delims=" %%i in ('dir /b /ad 2^>nul') do (
+            if /i not "%%i"=="_deps" rmdir /s /q "%%i" 2>nul
+        )
+        popd
+        echo Build directory cleaned (preserved _deps)
+    )
+    set FORCE_CONFIG=ON
+)
+
 :: Configure project
 if /i "%FORCE_CONFIG%"=="ON" (
     echo Configuring project...
@@ -160,6 +188,7 @@ echo   --tests ON/OFF      Whether to build tests (default: OFF)
 echo   --generator GEN     Set CMake generator (default: "Visual Studio 17 2022")
 echo   --arch ARCH         Set target architecture (default: x64)
 echo   --force, -f         Force CMake reconfiguration even if build directory exists
+echo   --rebuild, -r       Clean build directory (except _deps) and rebuild
 echo.
 echo Examples:
 echo   build.bat --build-type Release --shared OFF

@@ -297,6 +297,27 @@ public:
      */
     bool IsHeadlessMode() const;
     
+    /**
+     * @brief Get the LLGL render system for advanced rendering operations
+     * 
+     * @return Pointer to the LLGL render system, or nullptr if not initialized
+     */
+    LLGL::RenderSystem* GetRenderSystem() const;
+    
+    /**
+     * @brief Get the LLGL swap chain for render pass operations
+     * 
+     * @return Pointer to the LLGL swap chain, or nullptr if not initialized
+     */
+    LLGL::SwapChain* GetSwapChain() const;
+    
+    /**
+     * @brief Get the LLGL command buffer for rendering commands
+     * 
+     * @return Pointer to the LLGL command buffer, or nullptr if not initialized
+     */
+    LLGL::CommandBuffer* GetCommandBuffer() const;
+    
 public:
     // Plugin info (made public for export function access)
     static PluginInfo pluginInfo_;

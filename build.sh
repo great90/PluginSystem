@@ -23,6 +23,7 @@ BUILD_EXAMPLES="ON"
 BUILD_TESTS="ON"
 GENERATOR="$DEFAULT_GENERATOR"
 FORCE_CONFIG="OFF"
+REBUILD="OFF"
 
 # Display help information
 show_help() {
@@ -38,6 +39,7 @@ show_help() {
     echo "  --tests ON/OFF      Whether to build tests (default: OFF)"
     echo "  --generator GEN     Set CMake generator (default: auto-detected based on OS)"
     echo "  --force, -f         Force CMake reconfiguration even if build directory exists"
+    echo "  --rebuild, -r       Clean build directory (except _deps) and rebuild"
     echo ""
     echo "Examples:"
     echo "  $0 --build-type Release --shared OFF"
@@ -55,6 +57,11 @@ while [[ $# -gt 0 ]]; do
             ;;
         --force|-f)
             FORCE_CONFIG="ON"
+            shift
+            continue
+            ;;
+        --rebuild|-r)
+            REBUILD="ON"
             shift
             continue
             ;;
@@ -111,6 +118,19 @@ fi
 if [ ! -d "$BUILD_DIR" ]; then
     echo "Creating build directory: $BUILD_DIR"
     mkdir -p "$BUILD_DIR"
+    FORCE_CONFIG="ON"
+fi
+
+# Handle rebuild option
+if [ "$REBUILD" = "ON" ]; then
+    echo "Rebuilding: cleaning build directory (preserving _deps)..."
+    if [ -d "$BUILD_DIR" ]; then
+        cd "$BUILD_DIR"
+        # Remove all files and directories except _deps
+        find . -mindepth 1 -maxdepth 1 ! -name '_deps' -exec rm -rf {} +
+        cd ..
+        echo "Build directory cleaned (preserved _deps)"
+    fi
     FORCE_CONFIG="ON"
 fi
 
