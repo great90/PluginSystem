@@ -9,6 +9,14 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 
+# Download and build Gauss Math library
+FetchContent_Declare(
+    gauss
+    GIT_REPOSITORY https://github.com/LukasBanana/GaussianLib.git
+    GIT_TAG master
+    GIT_SHALLOW TRUE
+)
+
 # Configure LLGL build
 set(LLGL_BUILD_EXAMPLES ON CACHE BOOL "Build LLGL examples" FORCE)
 set(LLGL_BUILD_TESTS OFF CACHE BOOL "Build LLGL tests" FORCE)
@@ -77,57 +85,84 @@ else()
     endif()
 endif()
 
-# Make LLGL available
-FetchContent_MakeAvailable(LLGL)
+# Make LLGL and Gauss available
+FetchContent_MakeAvailable(LLGL gauss)
 
-# Define source files
-set(RENDERING_PLUGIN_SOURCES
-    src/RenderingPlugin.cpp
-)
-
-# Define header files
-set(RENDERING_PLUGIN_HEADERS
+# Define abstract base class headers
+set(RENDERING_PLUGIN_BASE_HEADERS
+    include/RenderingPluginBase.h
     include/RenderingPlugin.h
     include/RenderingPluginExport.h
 )
 
-# Create library target
-if(BUILD_SHARED_LIBS)
-    add_library(RenderingPlugin SHARED ${RENDERING_PLUGIN_SOURCES} ${RENDERING_PLUGIN_HEADERS})
-    target_compile_definitions(RenderingPlugin PRIVATE RENDERING_PLUGIN_EXPORTS)
-    target_compile_definitions(RenderingPlugin PUBLIC RENDERING_PLUGIN_SHARED)
-else()
-    add_library(RenderingPlugin STATIC ${RENDERING_PLUGIN_SOURCES} ${RENDERING_PLUGIN_HEADERS})
-endif()
+# Define modular component sources and headers
+set(RENDERING_PLUGIN_COMPONENT_SOURCES
+    src/RenderingSystem.cpp
+    src/ResourceManager.cpp
+    src/RenderCommands.cpp
+    src/GeometryGenerator.cpp
+    src/ShaderManager.cpp
+)
 
-# 在Debug模式下添加调试符号
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    target_compile_options(RenderingPlugin PRIVATE -g -O0)
-endif()
+set(RENDERING_PLUGIN_COMPONENT_HEADERS
+    include/RenderingSystem.h
+    include/ResourceManager.h
+    include/RenderCommands.h
+    include/GeometryGenerator.h
+    include/ShaderManager.h
+)
 
-# Set include directories
-target_include_directories(RenderingPlugin
+# Create a static library for shared components
+add_library(RenderingPluginComponents STATIC 
+    ${RENDERING_PLUGIN_COMPONENT_SOURCES} 
+    ${RENDERING_PLUGIN_COMPONENT_HEADERS}
+)
+
+target_include_directories(RenderingPluginComponents
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
+        $<TARGET_PROPERTY:LLGL,INTERFACE_INCLUDE_DIRECTORIES>
+        $<TARGET_PROPERTY:gausslib,INTERFACE_INCLUDE_DIRECTORIES>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-# Link dependencies
-target_link_libraries(RenderingPlugin PRIVATE 
-    PluginCore
-    LLGL
+target_link_libraries(RenderingPluginComponents 
+    PRIVATE PluginCore
+    PUBLIC LLGL gausslib
 )
 
-# Set output name to remove lib prefix
-set_target_properties(RenderingPlugin PROPERTIES
-    OUTPUT_NAME "RenderingPlugin"
-    PREFIX ""
+# Set C++ standard for RenderingPluginComponents
+target_compile_features(RenderingPluginComponents PRIVATE cxx_std_17)
+set_target_properties(RenderingPluginComponents PROPERTIES
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
 )
+
+# Add the LLGLRenderingPlugin subdirectory
+message(STATUS "About to add LLGLRenderingPlugin subdirectory")
+add_subdirectory(LLGLRenderingPlugin)
+message(STATUS "Finished adding LLGLRenderingPlugin subdirectory")
+
+# Create an interface library for the abstract base
+add_library(RenderingPluginBase INTERFACE)
+target_include_directories(RenderingPluginBase INTERFACE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
+
+# For backward compatibility, create an alias that points to LLGLRenderingPlugin
+add_library(RenderingPlugin ALIAS LLGLRenderingPlugin)
+
+# 在Debug模式下添加调试符号
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_compile_options(RenderingPluginComponents PRIVATE -g -O0)
+endif()
 
 # Installation rules
-install(TARGETS RenderingPlugin
+install(TARGETS LLGLRenderingPlugin
     EXPORT RenderingPluginTargets
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
@@ -135,4 +170,4 @@ install(TARGETS RenderingPlugin
     INCLUDES DESTINATION include
 )
 
-install(FILES ${RENDERING_PLUGIN_HEADERS} DESTINATION include/RenderingPlugin)
+install(FILES ${RENDERING_PLUGIN_BASE_HEADERS} DESTINATION include/RenderingPlugin)

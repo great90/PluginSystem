@@ -1,10 +1,18 @@
 /**
  * @file RenderingPlugin.cpp
- * @brief Implementation of the RenderingPlugin class
+ * @brief Implementation of the RenderingPlugin class with modular architecture
  */
 
 #include "RenderingPlugin.h"
 #include "PluginExport.h"
+
+// Include modular components
+#include "RenderingSystem.h"
+#include "ResourceManager.h"
+#include "RenderCommands.h"
+#include "GeometryGenerator.h"
+#include "ShaderManager.h"
+
 #include <iostream>
 #include <stdexcept>
 #include <chrono>
@@ -27,24 +35,32 @@ PluginInfo RenderingPlugin::pluginInfo_ = {
 };
 
 RenderingPlugin::RenderingPlugin() 
-    : renderSystem_(nullptr), swapChain_(nullptr), commandBuffer_(nullptr), surface_(nullptr),
+    : renderingSystem_(nullptr), resourceManager_(nullptr), renderCommands_(nullptr),
+      geometryGenerator_(nullptr), shaderManager_(nullptr),
+      renderSystem_(nullptr), swapChain_(nullptr), commandBuffer_(nullptr), surface_(nullptr),
       currentAPI_(RenderAPI::None), initialized_(false), currentMode_(RenderingMode::Hardware),
       softwareRenderingEnabled_(false), offscreenRenderTarget_(nullptr) {
-    std::cerr << "RenderingPlugin constructor called, this = " << this << std::endl;
-    std::cerr << "Before setting: instance_ = " << instance_ << std::endl;
+    std::cout << "RenderingPlugin constructor called, this = " << this << std::endl;
+    
     // Set singleton instance if not already set
     if (instance_ == nullptr) {
         instance_ = this;
-        std::cerr << "Set instance_ to this = " << this << std::endl;
+        std::cout << "Set instance_ to this = " << this << std::endl;
     } else {
-        std::cerr << "instance_ already set to " << instance_ << std::endl;
+        std::cout << "instance_ already set to " << instance_ << std::endl;
     }
-    std::cerr << "After setting: instance_ = " << instance_ << std::endl;
 }
 
 RenderingPlugin::~RenderingPlugin() {
     // Don't call Shutdown in destructor to avoid issues with LLGL cleanup
     // Shutdown should be called explicitly before destruction
+    
+    // Clean up modular components (they should already be cleaned up in Shutdown)
+    renderingSystem_ = nullptr;
+    resourceManager_ = nullptr;
+    renderCommands_ = nullptr;
+    geometryGenerator_ = nullptr;
+    shaderManager_ = nullptr;
     
     // Clear the singleton instance if it's this instance
     if (instance_ == this) {
@@ -54,12 +70,34 @@ RenderingPlugin::~RenderingPlugin() {
 
 bool RenderingPlugin::Initialize() {
     try {
+        std::cout << "RenderingPlugin::Initialize() - Starting initialization..." << std::endl;
+        
+        // Initialize modular components
+        renderingSystem_ = std::make_unique<RenderingPlugin::RenderingSystem>();
+        if (!renderingSystem_) {
+            std::cerr << "Failed to create RenderingSystem" << std::endl;
+            return false;
+        }
+        
+        geometryGenerator_ = std::make_unique<RenderingPlugin::GeometryGenerator>();
+        if (!geometryGenerator_) {
+            std::cerr << "Failed to create GeometryGenerator" << std::endl;
+            return false;
+        }
+        
+        std::cout << "RenderingPlugin::Initialize() - Modular components created successfully" << std::endl;
+        
         initialized_ = true;
         std::cout << "RenderingPlugin initialized successfully" << std::endl;
         return true;
     }
     catch (const std::exception& e) {
         std::cerr << "Failed to initialize RenderingPlugin: " << e.what() << std::endl;
+        
+        // Clean up on failure
+        renderingSystem_.reset();
+        geometryGenerator_.reset();
+        
         initialized_ = false;
         return false;
     }
@@ -67,39 +105,52 @@ bool RenderingPlugin::Initialize() {
 
 void RenderingPlugin::Shutdown() {
     // Prevent multiple shutdowns - check all critical resources
-    if (!initialized_ && !renderSystem_ && !swapChain_) {
+    if (!initialized_ && !renderingSystem_ && !renderSystem_ && !swapChain_) {
         return;
     }
     
     std::cout << "RenderingPlugin::Shutdown() - Starting shutdown process..." << std::endl;
     
     try {
-        // Clear surface reference first
+        // Shutdown modular components first
+        if (renderCommands_) {
+            std::cout << "RenderingPlugin::Shutdown() - Cleaning up RenderCommands..." << std::endl;
+            renderCommands_.reset();
+        }
+        
+        if (shaderManager_) {
+            std::cout << "RenderingPlugin::Shutdown() - Cleaning up ShaderManager..." << std::endl;
+            shaderManager_.reset();
+        }
+        
+        if (resourceManager_) {
+            std::cout << "RenderingPlugin::Shutdown() - Cleaning up ResourceManager..." << std::endl;
+            resourceManager_.reset();
+        }
+        
+        if (geometryGenerator_) {
+            std::cout << "RenderingPlugin::Shutdown() - Cleaning up GeometryGenerator..." << std::endl;
+            geometryGenerator_.reset();
+        }
+        
+        // Shutdown rendering system (this will handle LLGL cleanup)
+        if (renderingSystem_) {
+            std::cout << "RenderingPlugin::Shutdown() - Shutting down RenderingSystem..." << std::endl;
+            renderingSystem_->Shutdown();
+            renderingSystem_.reset();
+            std::cout << "RenderingPlugin::Shutdown() - RenderingSystem shutdown completed" << std::endl;
+        }
+        
+        // Legacy cleanup for backward compatibility
         surface_ = nullptr;
-        std::cout << "RenderingPlugin::Shutdown() - Surface cleared" << std::endl;
-        
-        // Release command buffer first (before swap chain and render system)
-        if (commandBuffer_ && renderSystem_) {
-            std::cout << "RenderingPlugin::Shutdown() - Releasing command buffer..." << std::endl;
-            renderSystem_->Release(*commandBuffer_);
-            commandBuffer_ = nullptr;
-            std::cout << "RenderingPlugin::Shutdown() - Command buffer released" << std::endl;
-        }
-        
-        // Reset swap chain BEFORE render system cleanup to ensure proper destruction order
+        commandBuffer_ = nullptr;
         if (swapChain_) {
-            std::cout << "RenderingPlugin::Shutdown() - Resetting swap chain..." << std::endl;
             swapChain_.reset();
-            swapChain_ = nullptr;  // Explicitly set to nullptr after reset
-            std::cout << "RenderingPlugin::Shutdown() - Swap chain reset completed" << std::endl;
+            swapChain_ = nullptr;
         }
-        
-        // Clean up render system AFTER swap chain to avoid dependency issues
         if (renderSystem_) {
-            std::cout << "RenderingPlugin::Shutdown() - Deleting render system..." << std::endl;
             delete renderSystem_;
             renderSystem_ = nullptr;
-            std::cout << "RenderingPlugin::Shutdown() - Render system deleted" << std::endl;
         }
         
         initialized_ = false;
@@ -112,6 +163,14 @@ void RenderingPlugin::Shutdown() {
         // Still mark as shutdown to prevent further issues
         initialized_ = false;
         currentAPI_ = RenderAPI::None;
+        
+        // Clean up all components
+        renderCommands_.reset();
+        shaderManager_.reset();
+        resourceManager_.reset();
+        geometryGenerator_.reset();
+        renderingSystem_.reset();
+        
         renderSystem_ = nullptr;
         commandBuffer_ = nullptr;
         if (swapChain_) {
@@ -125,6 +184,14 @@ void RenderingPlugin::Shutdown() {
         // Still mark as shutdown to prevent further issues
         initialized_ = false;
         currentAPI_ = RenderAPI::None;
+        
+        // Clean up all components
+        renderCommands_.reset();
+        shaderManager_.reset();
+        resourceManager_.reset();
+        geometryGenerator_.reset();
+        renderingSystem_.reset();
+        
         renderSystem_ = nullptr;
         commandBuffer_ = nullptr;
         if (swapChain_) {
@@ -350,12 +417,30 @@ bool RenderingPlugin::InitializeRenderSystem(RenderAPI api) {
 }
 
 bool RenderingPlugin::CreateWindow(const WindowDesc& desc) {
+    // Use new modular architecture if available
+    if (renderingSystem_) {
+        std::cout << "CreateWindow: Using new modular RenderingSystem..." << std::endl;
+        bool success = renderingSystem_->CreateWindow(desc.width, desc.height, desc.title);
+        if (success) {
+            windowDesc_ = desc;
+            
+            // Update legacy members for backward compatibility
+            if (renderingSystem_->GetSwapChain()) {
+                swapChain_.reset(renderingSystem_->GetSwapChain());
+                surface_ = renderingSystem_->GetSurface();
+                commandBuffer_ = renderingSystem_->GetCommandBuffer();
+            }
+        }
+        return success;
+    }
+    
+    // Legacy implementation for backward compatibility
     if (!renderSystem_) {
         std::cout << "CreateWindow: No render system available" << std::endl;
         return false;
     }
     
-    std::cout << "CreateWindow: Starting window creation..." << std::endl;
+    std::cout << "CreateWindow: Using legacy implementation..." << std::endl;
     std::cout << "  - Requested size: " << desc.width << "x" << desc.height << std::endl;
     std::cout << "  - Title: " << desc.title << std::endl;
     std::cout << "  - Current API: " << GetModuleName(currentAPI_) << std::endl;
@@ -371,12 +456,6 @@ bool RenderingPlugin::CreateWindow(const WindowDesc& desc) {
         swapChainDesc.swapBuffers = 2;
         swapChainDesc.fullscreen = false;
         swapChainDesc.resizable = true;
-        
-        // macOS-specific: Set window title in descriptor
-        if (!desc.title.empty()) {
-            // Note: LLGL may not directly support title in SwapChainDescriptor
-            // but we'll store it for later use
-        }
         
         std::cout << "CreateWindow: Creating swap chain..." << std::endl;
         
@@ -398,10 +477,13 @@ bool RenderingPlugin::CreateWindow(const WindowDesc& desc) {
         
         std::cout << "CreateWindow: Surface obtained successfully" << std::endl;
         
-        // macOS-specific: Try to set window title if possible
+        // Try to set window title if possible
         try {
-            // Note: This might not work with all LLGL backends
-            // surface_->SetTitle(desc.title.c_str());
+            if (LLGL::IsInstanceOf<LLGL::Window>(surface_)) {
+                LLGL::Window* window = LLGL::CastTo<LLGL::Window>(surface_);
+                window->SetTitle(L"Example");
+                window->Show();
+            }
         } catch (...) {
             // Ignore title setting errors
         }
@@ -419,36 +501,10 @@ bool RenderingPlugin::CreateWindow(const WindowDesc& desc) {
         // Store window description
         windowDesc_ = desc;
         
-#ifdef __APPLE__
-        // macOS特定：强制窗口显示到前台
+        // Process events to ensure window is properly initialized
         try {
-            if (surface_) {
-                // 处理事件以确保窗口正确显示
-                LLGL::Surface::ProcessEvents();
-                
-                // 短暂延迟让窗口系统处理
-                std::this_thread::sleep_for(std::chrono::milliseconds(200));
-                
-                // 再次处理事件
-                LLGL::Surface::ProcessEvents();
-                
-                std::cout << "CreateWindow: macOS window forced to front" << std::endl;
-            }
-        } catch (const std::exception& e) {
-            std::cout << "CreateWindow: Warning - failed to force window to front: " << e.what() << std::endl;
-        } catch (...) {
-            std::cout << "CreateWindow: Warning - unknown error forcing window to front" << std::endl;
-        }
-#endif
-        
-        // macOS-specific: Force window to front
-        try {
-            // Process events to ensure window is properly initialized
             LLGL::Surface::ProcessEvents();
-            
-            // Small delay to allow window system to process
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            
             LLGL::Surface::ProcessEvents();
         } catch (...) {
             // Ignore event processing errors
@@ -467,43 +523,114 @@ bool RenderingPlugin::CreateWindow(const WindowDesc& desc) {
 }
 
 bool RenderingPlugin::BeginFrame() {
+    // Use new modular architecture if available
+    if (renderingSystem_ && renderCommands_) {
+        return renderingSystem_->BeginFrame() && renderCommands_->BeginFrame();
+    }
+    
+    // Legacy implementation for backward compatibility
     if (!initialized_ || !commandBuffer_) {
+        std::cerr << "BeginFrame: Plugin not initialized or no command buffer available" << std::endl;
         return false;
     }
     
     try {
+        // Begin command buffer recording
         commandBuffer_->Begin();
-        commandBuffer_->BeginRenderPass(*swapChain_);
+        
+        // Begin render pass if swap chain is available
+        if (swapChain_) {
+            commandBuffer_->BeginRenderPass(*swapChain_);
+            
+            // Clear color and depth buffers with a nice blue background
+            LLGL::ClearValue clearValue;
+            clearValue.color[0] = 0.1f;  // Red
+            clearValue.color[1] = 0.1f;  // Green
+            clearValue.color[2] = 0.2f;  // Blue
+            clearValue.color[3] = 1.0f;  // Alpha
+            clearValue.depth = 1.0f;
+            clearValue.stencil = 0;
+            
+            commandBuffer_->Clear(LLGL::ClearFlags::ColorDepth, clearValue);
+            
+            // Set viewport to full window size
+            const auto resolution = swapChain_->GetResolution();
+            LLGL::Viewport viewport;
+            viewport.x = 0.0f;
+            viewport.y = 0.0f;
+            viewport.width = static_cast<float>(resolution.width);
+            viewport.height = static_cast<float>(resolution.height);
+            viewport.minDepth = 0.0f;
+            viewport.maxDepth = 1.0f;
+            
+            commandBuffer_->SetViewport(viewport);
+        }
+        
         return true;
-    }
-    catch (const std::exception& e) {
-        std::cerr << "Failed to begin frame: " << e.what() << std::endl;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "BeginFrame: Exception caught: " << e.what() << std::endl;
         return false;
     }
 }
 
 bool RenderingPlugin::EndFrame() {
+    // Use new modular architecture if available
+    if (renderingSystem_ && renderCommands_) {
+        bool success = renderCommands_->EndFrame();
+        if (success) {
+            success = renderingSystem_->EndFrame();
+        }
+        return success;
+    }
+    
+    // Legacy implementation for backward compatibility
     if (!initialized_ || !commandBuffer_) {
+        std::cerr << "EndFrame: Plugin not initialized or no command buffer available" << std::endl;
         return false;
     }
     
     try {
-        commandBuffer_->EndRenderPass();
+        // End render pass if swap chain is available
+        if (swapChain_) {
+            commandBuffer_->EndRenderPass();
+        }
+        
+        // End command buffer recording
         commandBuffer_->End();
         
-        // Submit command buffer and present
-        renderSystem_->GetCommandQueue()->Submit(*commandBuffer_);
-        swapChain_->Present();
+        // Submit command buffer to render system
+        if (renderSystem_) {
+            auto commandQueue = renderSystem_->GetCommandQueue();
+            if (commandQueue) {
+                commandQueue->Submit(*commandBuffer_);
+            } else {
+                std::cerr << "EndFrame: No command queue available" << std::endl;
+                return false;
+            }
+        }
+        
+        // Present the swap chain
+        if (swapChain_) {
+            swapChain_->Present();
+        }
         
         return true;
-    }
-    catch (const std::exception& e) {
-        std::cerr << "Failed to end frame: " << e.what() << std::endl;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "EndFrame: Exception caught: " << e.what() << std::endl;
         return false;
     }
 }
 
 void RenderingPlugin::Clear(const Color& color) {
+    // Use new modular architecture if available
+    if (renderCommands_) {
+        renderCommands_->Clear(color.r, color.g, color.b, color.a);
+        return;
+    }
+    
+    // Legacy implementation for backward compatibility
     if (!initialized_ || !commandBuffer_) {
         return;
     }
@@ -525,6 +652,13 @@ void RenderingPlugin::Clear(const Color& color) {
 }
 
 void RenderingPlugin::SetViewport(int x, int y, int width, int height) {
+    // Use new modular architecture if available
+    if (renderCommands_) {
+        renderCommands_->SetViewport(x, y, width, height);
+        return;
+    }
+    
+    // Legacy implementation for backward compatibility
     if (!initialized_ || !commandBuffer_) {
         return;
     }
@@ -546,14 +680,32 @@ void RenderingPlugin::SetViewport(int x, int y, int width, int height) {
 }
 
 bool RenderingPlugin::IsInitialized() const {
+    // Use new modular architecture if available
+    if (renderingSystem_) {
+        return renderingSystem_->IsInitialized();
+    }
+    
+    // Legacy implementation for backward compatibility
     return initialized_;
 }
 
 RenderAPI RenderingPlugin::GetCurrentAPI() const {
+    // Use new modular architecture if available
+    if (renderingSystem_) {
+        return renderingSystem_->GetCurrentAPI();
+    }
+    
+    // Legacy implementation for backward compatibility
     return currentAPI_;
 }
 
 bool RenderingPlugin::GetWindowSize(int& width, int& height) const {
+    // Use new modular architecture if available
+    if (renderingSystem_) {
+        return renderingSystem_->GetWindowSize(width, height);
+    }
+    
+    // Legacy implementation for backward compatibility
     if (!initialized_ || !swapChain_) {
         width = 0;
         height = 0;
@@ -567,12 +719,25 @@ bool RenderingPlugin::GetWindowSize(int& width, int& height) const {
 }
 
 bool RenderingPlugin::ShouldWindowClose() const {
+    // Use new modular architecture if available
+    if (renderingSystem_) {
+        return renderingSystem_->ShouldWindowClose();
+    }
+    
+    // Legacy implementation for backward compatibility
     // For now, just return false. In a real implementation,
     // you would check if the window close button was pressed
     return false;
 }
 
 void RenderingPlugin::PollEvents() {
+    // Use new modular architecture if available
+    if (renderingSystem_) {
+        renderingSystem_->PollEvents();
+        return;
+    }
+    
+    // Legacy implementation for backward compatibility
     // Poll window events using static method
     LLGL::Surface::ProcessEvents();
 }
@@ -1189,6 +1354,1056 @@ LLGL::SwapChain* RenderingPlugin::GetSwapChain() const {
 
 LLGL::CommandBuffer* RenderingPlugin::GetCommandBuffer() const {
     return commandBuffer_;
+}
+
+// === Rendering Resource Management Implementation ===
+
+LLGL::Buffer* RenderingPlugin::CreateVertexBuffer(const Vertex* vertices, std::uint32_t vertexCount) {
+    // Try using new modular architecture first
+    if (resourceManager_) {
+        return resourceManager_->CreateVertexBuffer(vertices, vertexCount);
+    }
+    
+    // Fallback to legacy implementation
+    if (!renderSystem_) {
+        std::cerr << "CreateVertexBuffer: No render system available" << std::endl;
+        return nullptr;
+    }
+    
+    try {
+        // Create vertex buffer descriptor
+        LLGL::BufferDescriptor vertexBufferDesc;
+        vertexBufferDesc.size = sizeof(Vertex) * vertexCount;
+        vertexBufferDesc.bindFlags = LLGL::BindFlags::VertexBuffer;
+        vertexBufferDesc.usage = LLGL::Usage::Immutable;
+        
+        // Create the vertex buffer with initial data
+        auto vertexBuffer = renderSystem_->CreateBuffer(vertexBufferDesc, vertices);
+        if (!vertexBuffer) {
+            std::cerr << "CreateVertexBuffer: Failed to create vertex buffer" << std::endl;
+            return nullptr;
+        }
+        
+        std::cout << "CreateVertexBuffer: Created vertex buffer with " << vertexCount << " vertices" << std::endl;
+        return vertexBuffer;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "CreateVertexBuffer: Exception caught: " << e.what() << std::endl;
+        return nullptr;
+    }
+}
+
+LLGL::Buffer* RenderingPlugin::CreateIndexBuffer(const std::uint32_t* indices, std::uint32_t indexCount) {
+    // Try using new modular architecture first
+    if (resourceManager_) {
+        return resourceManager_->CreateIndexBuffer(indices, indexCount);
+    }
+    
+    // Fallback to legacy implementation
+    if (!renderSystem_) {
+        std::cerr << "CreateIndexBuffer: No render system available" << std::endl;
+        return nullptr;
+    }
+    
+    try {
+        // Create index buffer descriptor
+        LLGL::BufferDescriptor indexBufferDesc;
+        indexBufferDesc.size = sizeof(std::uint32_t) * indexCount;
+        indexBufferDesc.bindFlags = LLGL::BindFlags::IndexBuffer;
+        indexBufferDesc.usage = LLGL::Usage::Immutable;
+        
+        // Create the index buffer with initial data
+        auto indexBuffer = renderSystem_->CreateBuffer(indexBufferDesc, indices);
+        if (!indexBuffer) {
+            std::cerr << "CreateIndexBuffer: Failed to create index buffer" << std::endl;
+            return nullptr;
+        }
+        
+        std::cout << "CreateIndexBuffer: Created index buffer with " << indexCount << " indices" << std::endl;
+        return indexBuffer;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "CreateIndexBuffer: Exception caught: " << e.what() << std::endl;
+        return nullptr;
+    }
+}
+
+LLGL::Buffer* RenderingPlugin::CreateConstantBuffer() {
+    // Try using new modular architecture first
+    if (resourceManager_) {
+        return resourceManager_->CreateConstantBuffer(sizeof(Matrices));
+    }
+    
+    // Fallback to legacy implementation
+    if (!renderSystem_) {
+        std::cerr << "CreateConstantBuffer: No render system available" << std::endl;
+        return nullptr;
+    }
+    
+    try {
+        // Create constant buffer descriptor
+        LLGL::BufferDescriptor constantBufferDesc;
+        constantBufferDesc.size = sizeof(Matrices);
+        constantBufferDesc.bindFlags = LLGL::BindFlags::ConstantBuffer;
+        constantBufferDesc.usage = LLGL::Usage::Dynamic;
+        
+        // Create the constant buffer
+        auto constantBuffer = renderSystem_->CreateBuffer(constantBufferDesc);
+        if (!constantBuffer) {
+            std::cerr << "CreateConstantBuffer: Failed to create constant buffer" << std::endl;
+            return nullptr;
+        }
+        
+        std::cout << "CreateConstantBuffer: Created constant buffer for matrix data" << std::endl;
+        return constantBuffer;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "CreateConstantBuffer: Exception caught: " << e.what() << std::endl;
+        return nullptr;
+    }
+}
+
+LLGL::Texture* RenderingPlugin::CreateTexture(const std::string& filename) {
+    // Try using new modular architecture first
+    if (resourceManager_) {
+        return resourceManager_->CreateTexture(filename);
+    }
+    
+    // Fallback to legacy implementation
+    if (!renderSystem_) {
+        std::cerr << "CreateTexture: No render system available" << std::endl;
+        return nullptr;
+    }
+    
+    try {
+        // For now, create a simple 2x2 white texture as placeholder
+        // In a real implementation, you would load the texture from file
+        std::uint32_t textureData[4] = { 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF };
+        
+        LLGL::TextureDescriptor textureDesc;
+        textureDesc.type = LLGL::TextureType::Texture2D;
+        textureDesc.bindFlags = LLGL::BindFlags::Sampled;
+        textureDesc.format = LLGL::Format::RGBA8UNorm;
+        textureDesc.extent.width = 2;
+        textureDesc.extent.height = 2;
+        textureDesc.extent.depth = 1;
+        textureDesc.arrayLayers = 1;
+        textureDesc.mipLevels = 1;
+        
+        auto texture = renderSystem_->CreateTexture(textureDesc, LLGL::ImageView{ LLGL::ImageFormat::RGBA, LLGL::DataType::UInt8, textureData });
+        if (!texture) {
+            std::cerr << "CreateTexture: Failed to create texture" << std::endl;
+            return nullptr;
+        }
+        
+        std::cout << "CreateTexture: Created placeholder texture (2x2 white)" << std::endl;
+        return texture;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "CreateTexture: Exception caught: " << e.what() << std::endl;
+        return nullptr;
+    }
+}
+
+LLGL::Sampler* RenderingPlugin::CreateSampler(int maxAnisotropy) {
+    // Try using new modular architecture first
+    if (resourceManager_) {
+        return resourceManager_->CreateSampler(maxAnisotropy);
+    }
+    
+    // Fallback to legacy implementation
+    if (!renderSystem_) {
+        std::cerr << "CreateSampler: No render system available" << std::endl;
+        return nullptr;
+    }
+    
+    try {
+        LLGL::SamplerDescriptor samplerDesc;
+        samplerDesc.addressModeU = LLGL::SamplerAddressMode::Repeat;
+        samplerDesc.addressModeV = LLGL::SamplerAddressMode::Repeat;
+        samplerDesc.addressModeW = LLGL::SamplerAddressMode::Repeat;
+        samplerDesc.minFilter = LLGL::SamplerFilter::Linear;
+        samplerDesc.magFilter = LLGL::SamplerFilter::Linear;
+        samplerDesc.mipMapFilter = LLGL::SamplerFilter::Linear;
+        samplerDesc.maxAnisotropy = static_cast<std::uint32_t>(maxAnisotropy);
+        
+        auto sampler = renderSystem_->CreateSampler(samplerDesc);
+        if (!sampler) {
+            std::cerr << "CreateSampler: Failed to create sampler" << std::endl;
+            return nullptr;
+        }
+        
+        std::cout << "CreateSampler: Created texture sampler with anisotropy " << maxAnisotropy << std::endl;
+        return sampler;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "CreateSampler: Exception caught: " << e.what() << std::endl;
+        return nullptr;
+    }
+}
+
+bool RenderingPlugin::CreateShaders(LLGL::Shader*& vertexShaderOut, LLGL::Shader*& fragmentShaderOut) {
+    // Try using new modular architecture first
+    if (shaderManager_) {
+        return shaderManager_->CreateDefaultShaders(vertexShaderOut, fragmentShaderOut);
+    }
+    
+    // Fallback to legacy implementation
+    if (!renderSystem_) {
+        std::cerr << "CreateShaders: No render system available" << std::endl;
+        return false;
+    }
+    
+    try {
+        const auto& renderCaps = renderSystem_->GetRenderingCaps();
+        
+        // Determine which shading language to use based on render system capabilities
+        std::string vertexShaderSource, fragmentShaderSource;
+        LLGL::ShaderDescriptor shaderDesc;
+        
+        if (renderCaps.shadingLanguages.find(LLGL::ShadingLanguage::HLSL) != renderCaps.shadingLanguages.end()) {
+            // HLSL shaders for Direct3D
+            shaderDesc.sourceType = LLGL::ShaderSourceType::CodeString;
+            
+            vertexShaderSource = R"(
+struct VertexIn {
+    float3 position : POSITION;
+    float3 normal   : NORMAL;
+    float2 texCoord : TEXCOORD;
+};
+
+struct VertexOut {
+    float4 position : SV_Position;
+    float3 normal   : NORMAL;
+    float2 texCoord : TEXCOORD;
+};
+
+cbuffer Matrices : register(b0) {
+    float4x4 wvpMatrix;
+    float4x4 worldMatrix;
+};
+
+VertexOut VS(VertexIn inp) {
+    VertexOut outp;
+    outp.position = mul(wvpMatrix, float4(inp.position, 1));
+    outp.normal = normalize(mul((float3x3)worldMatrix, inp.normal));
+    outp.texCoord = inp.texCoord;
+    return outp;
+}
+)";
+            
+            fragmentShaderSource = R"(
+struct VertexOut {
+    float4 position : SV_Position;
+    float3 normal   : NORMAL;
+    float2 texCoord : TEXCOORD;
+};
+
+Texture2D colorMap : register(t0);
+SamplerState colorMapSampler : register(s0);
+
+float4 PS(VertexOut inp) : SV_Target {
+    float3 lightDir = normalize(float3(0, 0, -1));
+    float NdotL = max(0.2, dot(lightDir, normalize(inp.normal)));
+    float4 albedo = colorMap.Sample(colorMapSampler, inp.texCoord);
+    return float4(albedo.rgb * NdotL, albedo.a);
+}
+)";
+            
+            shaderDesc.entryPoint = "VS";
+            
+        } else if (renderCaps.shadingLanguages.find(LLGL::ShadingLanguage::GLSL) != renderCaps.shadingLanguages.end()) {
+            // GLSL shaders for OpenGL
+            shaderDesc.sourceType = LLGL::ShaderSourceType::CodeString;
+            
+            vertexShaderSource = R"(
+#version 330 core
+
+layout(location = 0) in vec3 position;
+layout(location = 1) in vec3 normal;
+layout(location = 2) in vec2 texCoord;
+
+out vec3 vNormal;
+out vec2 vTexCoord;
+
+uniform Matrices {
+    mat4 wvpMatrix;
+    mat4 worldMatrix;
+};
+
+void main() {
+    gl_Position = wvpMatrix * vec4(position, 1.0);
+    vNormal = normalize(mat3(worldMatrix) * normal);
+    vTexCoord = texCoord;
+}
+)";
+            
+            fragmentShaderSource = R"(
+#version 330 core
+
+in vec3 vNormal;
+in vec2 vTexCoord;
+
+out vec4 fragColor;
+
+uniform sampler2D colorMap;
+
+void main() {
+    vec3 lightDir = normalize(vec3(0.0, 0.0, -1.0));
+    float NdotL = max(0.2, dot(lightDir, normalize(vNormal)));
+    vec4 albedo = texture(colorMap, vTexCoord);
+    fragColor = vec4(albedo.rgb * NdotL, albedo.a);
+}
+)";
+            
+            shaderDesc.entryPoint = "main";
+            
+        } else if (renderCaps.shadingLanguages.find(LLGL::ShadingLanguage::Metal) != renderCaps.shadingLanguages.end()) {
+            // Metal shaders for macOS/iOS
+            shaderDesc.sourceType = LLGL::ShaderSourceType::CodeString;
+            
+            vertexShaderSource = R"(
+#include <metal_stdlib>
+using namespace metal;
+
+struct VertexIn {
+    float3 position [[attribute(0)]];
+    float3 normal   [[attribute(1)]];
+    float2 texCoord [[attribute(2)]];
+};
+
+struct VertexOut {
+    float4 position [[position]];
+    float3 normal;
+    float2 texCoord;
+};
+
+struct Matrices {
+    float4x4 wvpMatrix;
+    float4x4 worldMatrix;
+};
+
+vertex VertexOut VS(VertexIn inp [[stage_in]], constant Matrices& matrices [[buffer(0)]]) {
+    VertexOut outp;
+    outp.position = matrices.wvpMatrix * float4(inp.position, 1.0);
+    outp.normal = normalize((matrices.worldMatrix * float4(inp.normal, 0.0)).xyz);
+    outp.texCoord = inp.texCoord;
+    return outp;
+}
+)";
+            
+            fragmentShaderSource = R"(
+#include <metal_stdlib>
+using namespace metal;
+
+struct VertexOut {
+    float4 position [[position]];
+    float3 normal;
+    float2 texCoord;
+};
+
+fragment float4 PS(VertexOut inp [[stage_in]], texture2d<float> colorMap [[texture(0)]], sampler colorMapSampler [[sampler(0)]]) {
+    float3 lightDir = normalize(float3(0.0, 0.0, -1.0));
+    float NdotL = max(0.2, dot(lightDir, normalize(inp.normal)));
+    float4 albedo = colorMap.sample(colorMapSampler, inp.texCoord);
+    return float4(albedo.rgb * NdotL, albedo.a);
+}
+)";
+            
+            shaderDesc.entryPoint = "VS";
+            
+        } else {
+            std::cerr << "CreateShaders: No supported shading language found" << std::endl;
+            return false;
+        }
+        
+        // Create vertex shader
+        shaderDesc.type = LLGL::ShaderType::Vertex;
+        shaderDesc.source = vertexShaderSource.c_str();
+        shaderDesc.sourceSize = vertexShaderSource.size();
+        
+        if (std::find(renderCaps.shadingLanguages.begin(), renderCaps.shadingLanguages.end(), LLGL::ShadingLanguage::Metal) != renderCaps.shadingLanguages.end()) {
+            shaderDesc.entryPoint = "VS";
+        }
+        
+        vertexShaderOut = renderSystem_->CreateShader(shaderDesc);
+        if (!vertexShaderOut) {
+            std::cerr << "CreateShaders: Failed to create vertex shader" << std::endl;
+            return false;
+        }
+        
+        // Check for vertex shader compilation errors
+        if (auto report = vertexShaderOut->GetReport()) {
+            if (report->HasErrors()) {
+                std::cerr << "CreateShaders: Vertex shader compilation errors:\n" << report->GetText() << std::endl;
+                renderSystem_->Release(*vertexShaderOut);
+                vertexShaderOut = nullptr;
+                return false;
+            }
+        }
+        
+        // Create fragment shader
+        shaderDesc.type = LLGL::ShaderType::Fragment;
+        shaderDesc.source = fragmentShaderSource.c_str();
+        shaderDesc.sourceSize = fragmentShaderSource.size();
+        
+        if (std::find(renderCaps.shadingLanguages.begin(), renderCaps.shadingLanguages.end(), LLGL::ShadingLanguage::Metal) != renderCaps.shadingLanguages.end()) {
+            shaderDesc.entryPoint = "PS";
+        } else if (std::find(renderCaps.shadingLanguages.begin(), renderCaps.shadingLanguages.end(), LLGL::ShadingLanguage::HLSL) != renderCaps.shadingLanguages.end()) {
+            shaderDesc.entryPoint = "PS";
+        }
+        
+        fragmentShaderOut = renderSystem_->CreateShader(shaderDesc);
+        if (!fragmentShaderOut) {
+            std::cerr << "CreateShaders: Failed to create fragment shader" << std::endl;
+            renderSystem_->Release(*vertexShaderOut);
+            vertexShaderOut = nullptr;
+            return false;
+        }
+        
+        // Check for fragment shader compilation errors
+        if (auto report = fragmentShaderOut->GetReport()) {
+            if (report->HasErrors()) {
+                std::cerr << "CreateShaders: Fragment shader compilation errors:\n" << report->GetText() << std::endl;
+                renderSystem_->Release(*vertexShaderOut);
+                renderSystem_->Release(*fragmentShaderOut);
+                vertexShaderOut = nullptr;
+                fragmentShaderOut = nullptr;
+                return false;
+            }
+        }
+        
+        std::cout << "CreateShaders: Successfully created vertex and fragment shaders" << std::endl;
+        return true;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "CreateShaders: Exception caught: " << e.what() << std::endl;
+        if (vertexShaderOut) {
+            renderSystem_->Release(*vertexShaderOut);
+            vertexShaderOut = nullptr;
+        }
+        if (fragmentShaderOut) {
+            renderSystem_->Release(*fragmentShaderOut);
+            fragmentShaderOut = nullptr;
+        }
+        return false;
+    }
+}
+
+LLGL::PipelineLayout* RenderingPlugin::CreatePipelineLayout() {
+    if (!renderSystem_) {
+        std::cerr << "CreatePipelineLayout: No render system available" << std::endl;
+        return nullptr;
+    }
+    
+    try {
+        LLGL::PipelineLayoutDescriptor layoutDesc;
+        
+        // Add constant buffer binding for matrices
+        LLGL::BindingDescriptor constantBufferBinding;
+        constantBufferBinding.name = "Matrices";
+        constantBufferBinding.type = LLGL::ResourceType::Buffer;
+        constantBufferBinding.bindFlags = LLGL::BindFlags::ConstantBuffer;
+        constantBufferBinding.stageFlags = LLGL::StageFlags::VertexStage;
+        constantBufferBinding.slot.index = 0;
+        layoutDesc.bindings.push_back(constantBufferBinding);
+        
+        // Add texture binding
+        LLGL::BindingDescriptor textureBinding;
+        textureBinding.name = "colorMap";
+        textureBinding.type = LLGL::ResourceType::Texture;
+        textureBinding.bindFlags = LLGL::BindFlags::Sampled;
+        textureBinding.stageFlags = LLGL::StageFlags::FragmentStage;
+        textureBinding.slot.index = 0;
+        layoutDesc.bindings.push_back(textureBinding);
+        
+        // Add sampler binding
+        LLGL::BindingDescriptor samplerBinding;
+        samplerBinding.name = "colorMapSampler";
+        samplerBinding.type = LLGL::ResourceType::Sampler;
+        samplerBinding.stageFlags = LLGL::StageFlags::FragmentStage;
+        samplerBinding.slot.index = 0;
+        layoutDesc.bindings.push_back(samplerBinding);
+        
+        auto layout = renderSystem_->CreatePipelineLayout(layoutDesc);
+        if (!layout) {
+            std::cerr << "CreatePipelineLayout: Failed to create pipeline layout" << std::endl;
+            return nullptr;
+        }
+        
+        std::cout << "CreatePipelineLayout: Successfully created pipeline layout" << std::endl;
+        return layout;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "CreatePipelineLayout: Exception caught: " << e.what() << std::endl;
+        return nullptr;
+    }
+}
+
+LLGL::ResourceHeap* RenderingPlugin::CreateResourceHeap(LLGL::PipelineLayout* layout, 
+                                                        LLGL::Buffer* constantBuffer,
+                                                        LLGL::Texture* texture, 
+                                                        LLGL::Sampler* sampler) {
+    if (!renderSystem_ || !layout) {
+        std::cerr << "CreateResourceHeap: No render system or layout available" << std::endl;
+        return nullptr;
+    }
+    
+    try {
+        LLGL::ResourceHeapDescriptor heapDesc;
+        heapDesc.pipelineLayout = layout;
+        
+        // Add resources to heap descriptor
+        std::vector<LLGL::Resource*> resources;
+        if (constantBuffer) {
+            resources.push_back(constantBuffer);
+        }
+        if (texture) {
+            resources.push_back(texture);
+        }
+        if (sampler) {
+            resources.push_back(sampler);
+        }
+        
+        LLGL::ResourceHeap* heap = renderSystem_->CreateResourceHeap(heapDesc, resources.data());
+        if (!heap) {
+            std::cerr << "CreateResourceHeap: Failed to create resource heap" << std::endl;
+            return nullptr;
+        }
+        
+        std::cout << "CreateResourceHeap: Successfully created resource heap" << std::endl;
+        return heap;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "CreateResourceHeap: Exception caught: " << e.what() << std::endl;
+        return nullptr;
+    }
+}
+
+bool RenderingPlugin::CreatePipelineState(LLGL::PipelineState*& pipelineOut, LLGL::Shader* vertexShader, 
+                                        LLGL::Shader* fragmentShader, LLGL::PipelineLayout* layout) {
+    if (!renderSystem_ || !vertexShader || !fragmentShader || !layout) {
+        std::cerr << "CreatePipelineState: Missing required parameters" << std::endl;
+        return false;
+    }
+    
+    try {
+        LLGL::GraphicsPipelineDescriptor pipelineDesc;
+        
+        // Set shaders
+        pipelineDesc.vertexShader = vertexShader;
+        pipelineDesc.fragmentShader = fragmentShader;
+        
+        // Set pipeline layout
+        pipelineDesc.pipelineLayout = layout;
+        
+        // Configure vertex input layout
+        LLGL::VertexAttribute positionAttr;
+        positionAttr.name = "position";
+        positionAttr.format = LLGL::Format::RGB32Float;
+        positionAttr.location = 0;
+        positionAttr.offset = 0;
+        
+        LLGL::VertexAttribute normalAttr;
+        normalAttr.name = "normal";
+        normalAttr.format = LLGL::Format::RGB32Float;
+        normalAttr.location = 1;
+        normalAttr.offset = 12; // 3 * sizeof(float)
+        
+        LLGL::VertexAttribute texCoordAttr;
+        texCoordAttr.name = "texCoord";
+        texCoordAttr.format = LLGL::Format::RG32Float;
+        texCoordAttr.location = 2;
+        texCoordAttr.offset = 24; // 6 * sizeof(float)
+        
+        pipelineDesc.vertexShader.vertexAttributes = { positionAttr, normalAttr, texCoordAttr };
+        
+        // Configure rasterizer state
+        pipelineDesc.rasterizer.cullMode = LLGL::CullMode::Back;
+        pipelineDesc.rasterizer.fillMode = LLGL::FillMode::Solid;
+        pipelineDesc.rasterizer.frontCCW = false;
+        
+        // Configure depth state
+        pipelineDesc.depth.testEnabled = true;
+        pipelineDesc.depth.writeEnabled = true;
+        pipelineDesc.depth.compareOp = LLGL::CompareOp::Less;
+        
+        // Configure blend state
+        pipelineDesc.blend.targets[0].colorMask = LLGL::ColorMaskFlags::All;
+        
+        // Configure multisampling
+        pipelineDesc.rasterizer.multiSampleEnabled = (swapChain_ && swapChain_->GetSamples() > 1);
+        
+        pipelineOut = renderSystem_->CreatePipelineState(pipelineDesc);
+        if (!pipelineOut) {
+            std::cerr << "CreatePipelineState: Failed to create pipeline state" << std::endl;
+            return false;
+        }
+        
+        std::cout << "CreatePipelineState: Successfully created pipeline state" << std::endl;
+        return true;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "CreatePipelineState: Exception caught: " << e.what() << std::endl;
+        return false;
+    }
+}
+
+std::vector<Vertex> RenderingPlugin::GenerateCubeVertices() {
+    // Try using new modular architecture first
+    if (geometryGenerator_) {
+        return geometryGenerator_->GenerateCubeVertices();
+    }
+    
+    // Fallback to legacy implementation
+    std::vector<Vertex> vertices;
+    
+    // Define cube vertices with positions, normals, and texture coordinates
+    // Front face
+    vertices.push_back({{-1.0f, -1.0f,  1.0f}, { 0.0f,  0.0f,  1.0f}, {0.0f, 0.0f}});
+    vertices.push_back({{ 1.0f, -1.0f,  1.0f}, { 0.0f,  0.0f,  1.0f}, {1.0f, 0.0f}});
+    vertices.push_back({{ 1.0f,  1.0f,  1.0f}, { 0.0f,  0.0f,  1.0f}, {1.0f, 1.0f}});
+    vertices.push_back({{-1.0f,  1.0f,  1.0f}, { 0.0f,  0.0f,  1.0f}, {0.0f, 1.0f}});
+    
+    // Back face
+    vertices.push_back({{ 1.0f, -1.0f, -1.0f}, { 0.0f,  0.0f, -1.0f}, {0.0f, 0.0f}});
+    vertices.push_back({{-1.0f, -1.0f, -1.0f}, { 0.0f,  0.0f, -1.0f}, {1.0f, 0.0f}});
+    vertices.push_back({{-1.0f,  1.0f, -1.0f}, { 0.0f,  0.0f, -1.0f}, {1.0f, 1.0f}});
+    vertices.push_back({{ 1.0f,  1.0f, -1.0f}, { 0.0f,  0.0f, -1.0f}, {0.0f, 1.0f}});
+    
+    // Left face
+    vertices.push_back({{-1.0f, -1.0f, -1.0f}, {-1.0f,  0.0f,  0.0f}, {0.0f, 0.0f}});
+    vertices.push_back({{-1.0f, -1.0f,  1.0f}, {-1.0f,  0.0f,  0.0f}, {1.0f, 0.0f}});
+    vertices.push_back({{-1.0f,  1.0f,  1.0f}, {-1.0f,  0.0f,  0.0f}, {1.0f, 1.0f}});
+    vertices.push_back({{-1.0f,  1.0f, -1.0f}, {-1.0f,  0.0f,  0.0f}, {0.0f, 1.0f}});
+    
+    // Right face
+    vertices.push_back({{ 1.0f, -1.0f,  1.0f}, { 1.0f,  0.0f,  0.0f}, {0.0f, 0.0f}});
+    vertices.push_back({{ 1.0f, -1.0f, -1.0f}, { 1.0f,  0.0f,  0.0f}, {1.0f, 0.0f}});
+    vertices.push_back({{ 1.0f,  1.0f, -1.0f}, { 1.0f,  0.0f,  0.0f}, {1.0f, 1.0f}});
+    vertices.push_back({{ 1.0f,  1.0f,  1.0f}, { 1.0f,  0.0f,  0.0f}, {0.0f, 1.0f}});
+    
+    // Top face
+    vertices.push_back({{-1.0f,  1.0f,  1.0f}, { 0.0f,  1.0f,  0.0f}, {0.0f, 0.0f}});
+    vertices.push_back({{ 1.0f,  1.0f,  1.0f}, { 0.0f,  1.0f,  0.0f}, {1.0f, 0.0f}});
+    vertices.push_back({{ 1.0f,  1.0f, -1.0f}, { 0.0f,  1.0f,  0.0f}, {1.0f, 1.0f}});
+    vertices.push_back({{-1.0f,  1.0f, -1.0f}, { 0.0f,  1.0f,  0.0f}, {0.0f, 1.0f}});
+    
+    // Bottom face
+    vertices.push_back({{-1.0f, -1.0f, -1.0f}, { 0.0f, -1.0f,  0.0f}, {0.0f, 0.0f}});
+    vertices.push_back({{ 1.0f, -1.0f, -1.0f}, { 0.0f, -1.0f,  0.0f}, {1.0f, 0.0f}});
+    vertices.push_back({{ 1.0f, -1.0f,  1.0f}, { 0.0f, -1.0f,  0.0f}, {1.0f, 1.0f}});
+    vertices.push_back({{-1.0f, -1.0f,  1.0f}, { 0.0f, -1.0f,  0.0f}, {0.0f, 1.0f}});
+    
+    return vertices;
+}
+
+std::vector<std::uint32_t> RenderingPlugin::GenerateCubeIndices() {
+    // Try using new modular architecture first
+    if (geometryGenerator_) {
+        return geometryGenerator_->GenerateCubeIndices();
+    }
+    
+    // Fallback to legacy implementation
+    std::vector<std::uint32_t> indices;
+    
+    // Define indices for each face (2 triangles per face)
+    // Front face
+    indices.insert(indices.end(), {0, 1, 2, 0, 2, 3});
+    // Back face
+    indices.insert(indices.end(), {4, 5, 6, 4, 6, 7});
+    // Left face
+    indices.insert(indices.end(), {8, 9, 10, 8, 10, 11});
+    // Right face
+    indices.insert(indices.end(), {12, 13, 14, 12, 14, 15});
+    // Top face
+    indices.insert(indices.end(), {16, 17, 18, 16, 18, 19});
+    // Bottom face
+    indices.insert(indices.end(), {20, 21, 22, 20, 22, 23});
+    
+    return indices;
+}
+
+std::vector<Vertex> RenderingPlugin::GenerateTriangleVertices() {
+    // Try using new modular architecture first
+    if (geometryGenerator_) {
+        return geometryGenerator_->GenerateTriangleVertices();
+    }
+    
+    // Fallback to legacy implementation
+    std::vector<Vertex> vertices;
+    
+    // Define triangle vertices with positions, normals, and texture coordinates
+    vertices.push_back({{ 0.0f,  1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.5f, 1.0f}});
+    vertices.push_back({{-1.0f, -1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}});
+    vertices.push_back({{ 1.0f, -1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f}});
+    
+    return vertices;
+}
+
+std::vector<std::uint32_t> RenderingPlugin::GenerateTriangleIndices() {
+    // Try using new modular architecture first
+    if (geometryGenerator_) {
+        return geometryGenerator_->GenerateTriangleIndices();
+    }
+    
+    // Fallback to legacy implementation
+    std::vector<std::uint32_t> indices;
+    
+    // Define indices for the triangle
+    indices.insert(indices.end(), {0, 1, 2});
+    
+    return indices;
+}
+
+Gs::Matrix4f RenderingPlugin::BuildPerspectiveProjection(float fov, float aspectRatio, float nearPlane, float farPlane) {
+    // Try using new modular architecture first
+    if (geometryGenerator_) {
+        return geometryGenerator_->BuildPerspectiveProjection(fov, aspectRatio, nearPlane, farPlane);
+    }
+    
+    // Fallback to legacy implementation
+    // Build perspective projection matrix using Gauss Math library
+    return Gs::ProjectionMatrix4f::Perspective(fov, aspectRatio, nearPlane, farPlane).ToMatrix4();
+}
+
+bool RenderingPlugin::UpdateConstantBuffer(LLGL::Buffer* constantBuffer, const Matrices& matrices) {
+    // Try using new modular architecture first
+    if (resourceManager_) {
+        return resourceManager_->UpdateConstantBuffer(constantBuffer, &matrices, sizeof(Matrices));
+    }
+    
+    // Fallback to legacy implementation
+    if (!renderSystem_ || !constantBuffer) {
+        std::cerr << "UpdateConstantBuffer: No render system or constant buffer available" << std::endl;
+        return false;
+    }
+    
+    try {
+        // Map the constant buffer for writing
+        if (auto mappedData = renderSystem_->MapBuffer(*constantBuffer, LLGL::CPUAccess::WriteOnly)) {
+            // Copy matrices data to the mapped buffer
+            std::memcpy(mappedData, &matrices, sizeof(Matrices));
+            
+            // Unmap the buffer
+            renderSystem_->UnmapBuffer(*constantBuffer);
+            
+            return true;
+        } else {
+            std::cerr << "UpdateConstantBuffer: Failed to map constant buffer" << std::endl;
+            return false;
+        }
+        
+    } catch (const std::exception& e) {
+        std::cerr << "UpdateConstantBuffer: Exception caught: " << e.what() << std::endl;
+        return false;
+    }
+}
+
+bool RenderingPlugin::CreateRenderObject(RenderObject& renderObject, const std::vector<Vertex>& vertices, 
+                                       const std::vector<std::uint32_t>& indices) {
+    // Try using new modular architecture first
+    if (resourceManager_) {
+        return resourceManager_->CreateRenderObject(renderObject, vertices, indices);
+    }
+    
+    // Fallback to legacy implementation
+    if (!renderSystem_) {
+        std::cerr << "CreateRenderObject: No render system available" << std::endl;
+        return false;
+    }
+    
+    try {
+        // Create vertex buffer
+        if (!CreateVertexBuffer(renderObject.vertexBuffer, vertices.data(), vertices.size() * sizeof(Vertex))) {
+            std::cerr << "CreateRenderObject: Failed to create vertex buffer" << std::endl;
+            return false;
+        }
+        
+        // Create index buffer
+        if (!CreateIndexBuffer(renderObject.indexBuffer, indices.data(), indices.size() * sizeof(std::uint32_t))) {
+            std::cerr << "CreateRenderObject: Failed to create index buffer" << std::endl;
+            ReleaseRenderObject(renderObject);
+            return false;
+        }
+        
+        // Create constant buffer for matrices
+        if (!CreateConstantBuffer(renderObject.constantBuffer, sizeof(Matrices))) {
+            std::cerr << "CreateRenderObject: Failed to create constant buffer" << std::endl;
+            ReleaseRenderObject(renderObject);
+            return false;
+        }
+        
+        // Create a simple white texture (1x1 pixel)
+        std::uint32_t whitePixel = 0xFFFFFFFF;
+        if (!CreateTexture(renderObject.texture, &whitePixel, 1, 1)) {
+            std::cerr << "CreateRenderObject: Failed to create texture" << std::endl;
+            ReleaseRenderObject(renderObject);
+            return false;
+        }
+        
+        // Create sampler
+        if (!CreateSampler(renderObject.sampler)) {
+            std::cerr << "CreateRenderObject: Failed to create sampler" << std::endl;
+            ReleaseRenderObject(renderObject);
+            return false;
+        }
+        
+        // Create shaders
+        if (!CreateShaders(renderObject.vertexShader, renderObject.fragmentShader)) {
+            std::cerr << "CreateRenderObject: Failed to create shaders" << std::endl;
+            ReleaseRenderObject(renderObject);
+            return false;
+        }
+        
+        // Create pipeline layout
+        if (!CreatePipelineLayout(renderObject.pipelineLayout)) {
+            std::cerr << "CreateRenderObject: Failed to create pipeline layout" << std::endl;
+            ReleaseRenderObject(renderObject);
+            return false;
+        }
+        
+        // Create resource heap
+        if (!CreateResourceHeap(renderObject.resourceHeap, renderObject.pipelineLayout, 
+                               renderObject.constantBuffer, renderObject.texture, renderObject.sampler)) {
+            std::cerr << "CreateRenderObject: Failed to create resource heap" << std::endl;
+            ReleaseRenderObject(renderObject);
+            return false;
+        }
+        
+        // Create pipeline state
+        if (!CreatePipelineState(renderObject.pipelineState, renderObject.vertexShader, 
+                                renderObject.fragmentShader, renderObject.pipelineLayout)) {
+            std::cerr << "CreateRenderObject: Failed to create pipeline state" << std::endl;
+            ReleaseRenderObject(renderObject);
+            return false;
+        }
+        
+        // Store index count for rendering
+        renderObject.indexCount = static_cast<std::uint32_t>(indices.size());
+        
+        std::cout << "CreateRenderObject: Successfully created render object with " 
+                  << vertices.size() << " vertices and " << indices.size() << " indices" << std::endl;
+        
+        return true;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "CreateRenderObject: Exception caught: " << e.what() << std::endl;
+        ReleaseRenderObject(renderObject);
+        return false;
+    }
+}
+
+void RenderingPlugin::ReleaseRenderObject(RenderObject& renderObject) {
+    // Try using new modular architecture first
+    if (resourceManager_) {
+        resourceManager_->ReleaseRenderObject(renderObject);
+        return;
+    }
+    
+    // Fallback to legacy implementation
+    if (!renderSystem_) {
+        return;
+    }
+    
+    // Release all LLGL resources
+    if (renderObject.vertexBuffer) {
+        renderSystem_->Release(*renderObject.vertexBuffer);
+        renderObject.vertexBuffer = nullptr;
+    }
+    
+    if (renderObject.indexBuffer) {
+        renderSystem_->Release(*renderObject.indexBuffer);
+        renderObject.indexBuffer = nullptr;
+    }
+    
+    if (renderObject.constantBuffer) {
+        renderSystem_->Release(*renderObject.constantBuffer);
+        renderObject.constantBuffer = nullptr;
+    }
+    
+    if (renderObject.texture) {
+        renderSystem_->Release(*renderObject.texture);
+        renderObject.texture = nullptr;
+    }
+    
+    if (renderObject.sampler) {
+        renderSystem_->Release(*renderObject.sampler);
+        renderObject.sampler = nullptr;
+    }
+    
+    if (renderObject.vertexShader) {
+        renderSystem_->Release(*renderObject.vertexShader);
+        renderObject.vertexShader = nullptr;
+    }
+    
+    if (renderObject.fragmentShader) {
+        renderSystem_->Release(*renderObject.fragmentShader);
+        renderObject.fragmentShader = nullptr;
+    }
+    
+    if (renderObject.pipelineLayout) {
+        renderSystem_->Release(*renderObject.pipelineLayout);
+        renderObject.pipelineLayout = nullptr;
+    }
+    
+    if (renderObject.resourceHeap) {
+        renderSystem_->Release(*renderObject.resourceHeap);
+        renderObject.resourceHeap = nullptr;
+    }
+    
+    if (renderObject.pipelineState) {
+        renderSystem_->Release(*renderObject.pipelineState);
+        renderObject.pipelineState = nullptr;
+    }
+    
+    renderObject.indexCount = 0;
+}
+
+bool RenderingPlugin::RenderObject(const RenderObject& renderObject, const Matrices& matrices) {
+    // Try using new modular architecture first
+    if (renderCommands_) {
+        return renderCommands_->RenderObject(renderObject, matrices);
+    }
+    
+    // Fallback to legacy implementation
+    if (!commandBuffer_ || !renderObject.pipelineState || !renderObject.resourceHeap) {
+        std::cerr << "RenderObject: Missing required rendering resources" << std::endl;
+        return false;
+    }
+    
+    try {
+        // Update constant buffer with current matrices
+        if (!UpdateConstantBuffer(renderObject.constantBuffer, matrices)) {
+            std::cerr << "RenderObject: Failed to update constant buffer" << std::endl;
+            return false;
+        }
+        
+        // Set vertex buffer
+        if (renderObject.vertexBuffer) {
+            commandBuffer_->SetVertexBuffer(*renderObject.vertexBuffer);
+        }
+        
+        // Set index buffer
+        if (renderObject.indexBuffer) {
+            commandBuffer_->SetIndexBuffer(*renderObject.indexBuffer);
+        }
+        
+        // Set pipeline state
+        commandBuffer_->SetPipelineState(*renderObject.pipelineState);
+        
+        // Set resource heap
+        commandBuffer_->SetResourceHeap(*renderObject.resourceHeap);
+        
+        // Draw indexed triangles
+        commandBuffer_->DrawIndexed(renderObject.indexCount, 0);
+        
+        return true;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "RenderObject: Exception caught: " << e.what() << std::endl;
+        return false;
+    }
+}
+
+bool RenderingPlugin::RenderDemo() {
+    if (!initialized_ || !renderSystem_ || !commandBuffer_) {
+        std::cerr << "RenderDemo: Plugin not properly initialized" << std::endl;
+        return false;
+    }
+    
+    static RenderObject cubeObject;
+    static bool demoInitialized = false;
+    static auto startTime = std::chrono::high_resolution_clock::now();
+    
+    try {
+        // Initialize demo resources once
+        if (!demoInitialized) {
+            std::cout << "RenderDemo: Initializing demo resources..." << std::endl;
+            
+            // Generate cube geometry
+            auto vertices = GenerateCubeVertices();
+            auto indices = GenerateCubeIndices();
+            
+            // Create render object with cube geometry
+            if (!CreateRenderObject(cubeObject, vertices, indices)) {
+                std::cerr << "RenderDemo: Failed to create cube render object" << std::endl;
+                return false;
+            }
+            
+            demoInitialized = true;
+            std::cout << "RenderDemo: Demo resources initialized successfully" << std::endl;
+        }
+        
+        // Begin frame
+        if (!BeginFrame()) {
+            std::cerr << "RenderDemo: Failed to begin frame" << std::endl;
+            return false;
+        }
+        
+        // Calculate time-based rotation
+        auto currentTime = std::chrono::high_resolution_clock::now();
+        auto elapsed = std::chrono::duration<float>(currentTime - startTime).count();
+        float rotationAngle = elapsed * 0.5f; // Rotate at 0.5 radians per second
+        
+        // Get window dimensions for aspect ratio
+        int windowWidth, windowHeight;
+        if (!GetWindowSize(windowWidth, windowHeight)) {
+            windowWidth = 800;
+            windowHeight = 600;
+        }
+        float aspectRatio = static_cast<float>(windowWidth) / static_cast<float>(windowHeight);
+        
+        // Build transformation matrices
+        Matrices matrices;
+        
+        // World matrix (rotation around Y axis)
+        matrices.world = Gs::Matrix4f::Identity();
+        matrices.world *= Gs::RotationMatrix4f::RotateY(rotationAngle).ToMatrix4();
+        
+        // View matrix (camera looking at origin from distance)
+        Gs::Vector3f cameraPos(0.0f, 0.0f, 3.0f);
+        Gs::Vector3f target(0.0f, 0.0f, 0.0f);
+        Gs::Vector3f up(0.0f, 1.0f, 0.0f);
+        auto viewMatrix = Gs::LookAtMatrix4f(cameraPos, target, up).ToMatrix4();
+        
+        // Projection matrix
+        auto projMatrix = BuildPerspectiveProjection(
+            Gs::Deg2Rad(45.0f), // 45 degree field of view
+            aspectRatio,
+            0.1f,               // Near plane
+            100.0f              // Far plane
+        );
+        
+        // Combine world, view, and projection matrices
+        matrices.worldViewProjection = matrices.world * viewMatrix * projMatrix;
+        
+        // Render the cube
+        if (!RenderObject(cubeObject, matrices)) {
+            std::cerr << "RenderDemo: Failed to render cube object" << std::endl;
+            EndFrame(); // Still try to end frame
+            return false;
+        }
+        
+        // End frame
+        if (!EndFrame()) {
+            std::cerr << "RenderDemo: Failed to end frame" << std::endl;
+            return false;
+        }
+        
+        return true;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "RenderDemo: Exception caught: " << e.what() << std::endl;
+        
+        // Clean up demo resources on error
+        if (demoInitialized) {
+            ReleaseRenderObject(cubeObject);
+            demoInitialized = false;
+        }
+        
+        return false;
+    }
 }
 
 // Plugin export functions implementation

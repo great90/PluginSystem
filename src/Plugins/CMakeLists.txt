@@ -4,4 +4,4 @@
 add_subdirectory(MathPlugin)
 add_subdirectory(LogPlugin)
 add_subdirectory(ScriptPlugin)
-add_subdirectory(RenderingPlugin)
+add_subdirectory(RenderingPlugin)  # Re-enabled for LLGLRenderingPlugin refactoring
