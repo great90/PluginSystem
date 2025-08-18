@@ -1,436 +1,278 @@
-/**
- * @file rendering_example.cpp
- * @brief Enhanced example program demonstrating advanced RenderingPlugin usage
- * 
- * This example demonstrates:
- * - Basic window creation and rendering loop
- * - Geometric shape rendering (triangles, rectangles)
- * - Vertex buffers and shaders
- * - Simple animations (rotation, scaling)
- * - Texture rendering
- * - Different render states (depth testing, blending)
+/*
+ * rendering_example.cpp
+ *
+ * 基于LLGL MultiRenderer示例重新实现的3D立方体渲染示例
+ * 使用RenderingPlugin接口进行渲染，支持鼠标交互旋转立方体
  */
 
+#include "../include/Plugin.h"
 #include <iostream>
 #include <memory>
-#include <thread>
 #include <chrono>
-#include <cstdlib>
-#include <typeinfo>
 #include <cmath>
-#include <vector>
-#include "PluginManager.h"
-#include "RenderingPlugin.h"
 
-// Include LLGL headers for advanced rendering
-// Note: LLGL headers are not directly accessible
-// All rendering functionality is accessed through RenderingPlugin
-
-// Define plugin extension based on platform
-#ifdef _WIN32
-#define PLUGIN_EXTENSION ".dll"
-#elif defined(__APPLE__)
-#define PLUGIN_EXTENSION ".dylib"
-#else
-#define PLUGIN_EXTENSION ".so"
-#endif
-
-// Simplified vertex structure (similar to HelloTriangle)
+// 顶点结构体
 struct Vertex {
-    float position[2];  // x, y (2D only)
-    std::uint8_t color[4];  // r, g, b, a (RGBA8 format)
+    float position[3];
+    float color[3];
+};
+
+// 变换矩阵结构体
+struct Transform {
+    float modelMatrix[16];
+    float viewMatrix[16];
+    float projMatrix[16];
+};
+
+// 渲染示例类
+class CubeRenderer {
+public:
+    CubeRenderer() : plugin_(nullptr), renderObject_(nullptr) {
+        // 初始化旋转角度
+        rotationX_ = 0.0f;
+        rotationY_ = 0.0f;
+        lastMouseX_ = 0.0f;
+        lastMouseY_ = 0.0f;
+        mousePressed_ = false;
+        
+        // 初始化时间
+        startTime_ = std::chrono::high_resolution_clock::now();
+    }
     
-    Vertex(float x, float y, std::uint8_t r, std::uint8_t g, std::uint8_t b, std::uint8_t a = 255)
-        : position{x, y}, color{r, g, b, a} {}
+    ~CubeRenderer() {
+        Cleanup();
+    }
+    
+    bool Initialize() {
+        // 创建插件实例
+        plugin_ = CreatePlugin();
+        if (!plugin_) {
+            std::cerr << "Failed to create plugin" << std::endl;
+            return false;
+        }
+        
+        // 初始化渲染系统
+        RenderAPI preferredAPI = RenderAPI::OpenGL; // 默认使用OpenGL
+        if (!plugin_->InitializeRenderSystem(preferredAPI)) {
+            std::cerr << "Failed to initialize render system" << std::endl;
+            return false;
+        }
+        
+        // 创建窗口
+        WindowDesc windowDesc;
+        windowDesc.title = "3D Cube Rendering Example";
+        windowDesc.width = 800;
+        windowDesc.height = 600;
+        windowDesc.resizable = true;
+        
+        if (!plugin_->CreateWindow(windowDesc)) {
+            std::cerr << "Failed to create window" << std::endl;
+            return false;
+        }
+        
+        // 生成立方体几何数据
+        if (!GenerateCubeData()) {
+            std::cerr << "Failed to generate cube data" << std::endl;
+            return false;
+        }
+        
+        // 创建渲染对象
+        if (!CreateRenderResources()) {
+            std::cerr << "Failed to create render resources" << std::endl;
+            return false;
+        }
+        
+        std::cout << "Cube renderer initialized successfully" << std::endl;
+        std::cout << "Use mouse to rotate the cube" << std::endl;
+        
+        return true;
+    }
+    
+    void Run() {
+        if (!plugin_) return;
+        
+        while (!plugin_->ShouldWindowClose()) {
+            // 处理事件
+            plugin_->PollEvents();
+            
+            // 处理鼠标输入
+            HandleMouseInput();
+            
+            // 更新变换矩阵
+            UpdateTransforms();
+            
+            // 渲染帧
+            RenderFrame();
+        }
+    }
+    
+private:
+    bool GenerateCubeData() {
+        // 使用插件生成立方体顶点数据
+        vertices_ = plugin_->GenerateCubeVertices();
+        indices_ = plugin_->GenerateCubeIndices();
+        
+        if (vertices_.empty() || indices_.empty()) {
+            std::cerr << "Failed to generate cube geometry" << std::endl;
+            return false;
+        }
+        
+        std::cout << "Generated cube with " << vertices_.size() << " vertices and " 
+                  << indices_.size() << " indices" << std::endl;
+        
+        return true;
+    }
+    
+    bool CreateRenderResources() {
+        if (!plugin_) return false;
+        
+        // 创建渲染对象
+        renderObject_ = plugin_->CreateRenderObject();
+        if (!renderObject_) {
+            std::cerr << "Failed to create render object" << std::endl;
+            return false;
+        }
+        
+        std::cout << "Render resources created successfully" << std::endl;
+        return true;
+    }
+    
+    void HandleMouseInput() {
+        // 这里可以添加鼠标输入处理逻辑
+        // 由于RenderingPlugin接口没有直接的鼠标输入方法，
+        // 我们使用简单的时间基础旋转作为演示
+        auto currentTime = std::chrono::high_resolution_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - startTime_).count();
+        
+        // 自动旋转
+        rotationY_ = (elapsed * 0.001f) * 30.0f; // 每秒30度
+        rotationX_ = sin(elapsed * 0.001f) * 15.0f; // 上下摆动
+    }
+    
+    void UpdateTransforms() {
+        if (!plugin_) return;
+        
+        // 获取窗口尺寸
+        auto windowSize = plugin_->GetWindowSize();
+        float aspect = static_cast<float>(windowSize.first) / static_cast<float>(windowSize.second);
+        
+        // 构建投影矩阵
+        float projMatrix[16];
+        plugin_->BuildPerspectiveProjection(projMatrix, 45.0f, aspect, 0.1f, 100.0f);
+        
+        // 构建视图矩阵（简单的相机位置）
+        float viewMatrix[16] = {
+            1.0f, 0.0f, 0.0f, 0.0f,
+            0.0f, 1.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 1.0f, -5.0f,
+            0.0f, 0.0f, 0.0f, 1.0f
+        };
+        
+        // 构建模型矩阵（旋转变换）
+        float modelMatrix[16];
+        BuildRotationMatrix(modelMatrix, rotationX_, rotationY_, 0.0f);
+        
+        // 更新常量缓冲区
+        Transform transform;
+        memcpy(transform.modelMatrix, modelMatrix, sizeof(modelMatrix));
+        memcpy(transform.viewMatrix, viewMatrix, sizeof(viewMatrix));
+        memcpy(transform.projMatrix, projMatrix, sizeof(projMatrix));
+        
+        plugin_->UpdateConstantBuffer(&transform, sizeof(Transform));
+    }
+    
+    void BuildRotationMatrix(float* matrix, float rotX, float rotY, float rotZ) {
+        // 简化的旋转矩阵构建
+        float cosX = cos(rotX * M_PI / 180.0f);
+        float sinX = sin(rotX * M_PI / 180.0f);
+        float cosY = cos(rotY * M_PI / 180.0f);
+        float sinY = sin(rotY * M_PI / 180.0f);
+        
+        // 组合Y轴和X轴旋转
+        matrix[0] = cosY; matrix[1] = 0; matrix[2] = sinY; matrix[3] = 0;
+        matrix[4] = sinY * sinX; matrix[5] = cosX; matrix[6] = -cosY * sinX; matrix[7] = 0;
+        matrix[8] = -sinY * cosX; matrix[9] = sinX; matrix[10] = cosY * cosX; matrix[11] = 0;
+        matrix[12] = 0; matrix[13] = 0; matrix[14] = 0; matrix[15] = 1;
+    }
+    
+    void RenderFrame() {
+        if (!plugin_) return;
+        
+        // 开始帧渲染
+        plugin_->BeginFrame();
+        
+        // 清除屏幕
+        Color clearColor = {0.1f, 0.1f, 0.2f, 1.0f}; // 深蓝色背景
+        plugin_->Clear(clearColor);
+        
+        // 设置视口
+        auto windowSize = plugin_->GetWindowSize();
+        plugin_->SetViewport(0, 0, windowSize.first, windowSize.second);
+        
+        // 渲染立方体
+        if (renderObject_) {
+            plugin_->RenderObject(renderObject_);
+        }
+        
+        // 结束帧渲染
+        plugin_->EndFrame();
+    }
+    
+    void Cleanup() {
+        if (plugin_) {
+            if (renderObject_) {
+                plugin_->ReleaseRenderObject(renderObject_);
+                renderObject_ = nullptr;
+            }
+            
+            // 释放插件
+            ReleasePlugin(plugin_);
+            plugin_ = nullptr;
+        }
+    }
+    
+private:
+    Plugin* plugin_;
+    void* renderObject_;
+    
+    // 几何数据
+    std::vector<Vertex> vertices_;
+    std::vector<uint32_t> indices_;
+    
+    // 变换参数
+    float rotationX_;
+    float rotationY_;
+    float lastMouseX_;
+    float lastMouseY_;
+    bool mousePressed_;
+    
+    // 时间管理
+    std::chrono::high_resolution_clock::time_point startTime_;
 };
-
-// Simplified triangle vertices (2D with RGBA8 colors)
-static const Vertex triangleVertices[] = {
-    Vertex( 0.0f,  0.5f,  255,   0,   0),  // Top vertex (red)
-    Vertex(-0.5f, -0.5f,    0, 255,   0),  // Bottom left (green)
-    Vertex( 0.5f, -0.5f,    0,   0, 255),  // Bottom right (blue)
-};
-
-// Simplified vertex shader source (similar to HelloTriangle)
-static const char* vertexShaderSourceGLSL = R"(
-#version 330 core
-layout (location = 0) in vec2 aPos;
-layout (location = 1) in vec4 aColor;
-
-out vec4 vertexColor;
-
-void main() {
-    gl_Position = vec4(aPos, 0.0, 1.0);
-    vertexColor = aColor;
-}
-)";
-
-// HLSL vertex shader for Direct3D
-static const char* vertexShaderSourceHLSL = R"(
-struct VertexIn {
-    float2 position : POSITION;
-    float4 color    : COLOR;
-};
-
-struct VertexOut {
-    float4 position : SV_Position;
-    float4 color    : COLOR;
-};
-
-VertexOut VS(VertexIn inp) {
-    VertexOut outp;
-    outp.position = float4(inp.position, 0, 1);
-    outp.color = inp.color;
-    return outp;
-}
-)";
-
-// Simplified fragment shader source (similar to HelloTriangle)
-static const char* fragmentShaderSourceGLSL = R"(
-#version 330 core
-in vec4 vertexColor;
-
-out vec4 FragColor;
-
-void main() {
-    FragColor = vertexColor;
-}
-)";
-
-// HLSL fragment shader for Direct3D
-static const char* fragmentShaderSourceHLSL = R"(
-struct VertexOut {
-    float4 position : SV_Position;
-    float4 color    : COLOR;
-};
-
-float4 PS(VertexOut inp) : SV_Target {
-    return inp.color;
-}
-)";
-
-// Removed texture and transformation helpers - focusing on simple triangle rendering
 
 int main() {
-    std::cout << "=== RenderingPlugin Example ===" << std::endl;
+    std::cout << "Starting 3D Cube Rendering Example..." << std::endl;
     
     try {
-        // Create plugin manager
-        PluginManager pluginManager;
-        pluginManager.SetPluginDirectory("plugins");
-        pluginManager.SetLoggingEnabled(true);
+        CubeRenderer renderer;
         
-        // Load the RenderingPlugin
-        std::cout << "Loading RenderingPlugin..." << std::endl;
-        bool loaded = pluginManager.LoadPlugin("build/bin/plugins/RenderingPlugin" PLUGIN_EXTENSION);
-        
-        if (!loaded) {
-            std::cerr << "Failed to load RenderingPlugin" << std::endl;
-            std::cerr << "Error: " << pluginManager.GetLastError() << std::endl;
+        if (!renderer.Initialize()) {
+            std::cerr << "Failed to initialize renderer" << std::endl;
             return -1;
         }
         
-        std::cout << "RenderingPlugin loaded successfully" << std::endl;
+        std::cout << "Renderer initialized, starting main loop..." << std::endl;
+        renderer.Run();
         
-        // Get RenderingPlugin instance through PluginManager first
-        auto basePlugin = pluginManager.GetPlugin("RenderingPlugin");
-        if (!basePlugin) {
-            std::cout << "Failed to get base plugin instance" << std::endl;
-            return -1;
-        }
-        
-        // Cast to RenderingPlugin and set singleton
-        RenderingPlugin* renderingPluginPtr = static_cast<RenderingPlugin*>(basePlugin.get());
-        RenderingPlugin::SetInstance(renderingPluginPtr);
-        
-        std::cout << "Successfully got RenderingPlugin instance: " << renderingPluginPtr << std::endl;
-        
-        // Display plugin information
-        const PluginInfo& info = renderingPluginPtr->GetPluginInfo();
-        std::cout << "Plugin Info:" << std::endl;
-        std::cout << "  Name: " << info.name << std::endl;
-        std::cout << "  Display Name: " << info.displayName << std::endl;
-        std::cout << "  Description: " << info.description << std::endl;
-        std::cout << "  Version: " << info.version.ToString() << std::endl;
-        std::cout << "  Author: " << info.author << std::endl;
-        std::cout << std::endl;
-        
-        // Initialize the plugin
-        std::cout << "Initializing plugin..." << std::endl;
-        if (!renderingPluginPtr->Initialize()) {
-            std::cerr << "Failed to initialize RenderingPlugin" << std::endl;
-            return -1;
-        }
-        
-        // Initialize render system (try Metal first on macOS for better compatibility)
-        std::cout << "Initializing render system..." << std::endl;
-        bool initialized = false;
-        
-        #ifdef __APPLE__
-        // On macOS, try Metal first as it's the native API
-        std::cout << "macOS detected - trying Metal API first..." << std::endl;
-        if (renderingPluginPtr->InitializeRenderSystem(RenderAPI::Metal)) {
-            std::cout << "Metal initialization successful" << std::endl;
-            initialized = true;
-        } else {
-            std::cout << "Metal initialization failed, trying OpenGL..." << std::endl;
-        }
-        #endif
-        
-        // Try Vulkan as fallback
-        if (!initialized) {
-            std::cout << "Trying Vulkan API..." << std::endl;
-            if (renderingPluginPtr->InitializeRenderSystem(RenderAPI::Vulkan)) {
-                std::cout << "Vulkan initialization successful" << std::endl;
-                initialized = true;
-            } else {
-                std::cout << "Vulkan initialization failed" << std::endl;
-            }
-        }
-
-        // Try OpenGL if Vulkan failed
-        if (!initialized) {
-            std::cout << "Trying OpenGL API..." << std::endl;
-            if (renderingPluginPtr->InitializeRenderSystem(RenderAPI::OpenGL)) {
-                std::cout << "OpenGL initialization successful" << std::endl;
-                initialized = true;
-            } else {
-                std::cout << "OpenGL initialization failed" << std::endl;
-            }
-        }
-        
-        #ifdef _WIN32
-        // Try Direct3D11 (Windows)
-        if (!initialized && renderingPluginPtr->InitializeRenderSystem(RenderAPI::Direct3D11)) {
-            std::cout << "Direct3D11 initialization successful" << std::endl;
-            initialized = true;
-        }
-        #endif
-
-        if (!initialized) {
-            std::cout << "No rendering API available, continuing with limited functionality..." << std::endl;
-            std::cout << "This might be due to:" << std::endl;
-            std::cout << "  - Running in a headless environment" << std::endl;
-            std::cout << "  - Missing graphics drivers" << std::endl;
-            std::cout << "  - Insufficient permissions" << std::endl;
-            std::cout << "  - LLGL library configuration issues" << std::endl;
-        }
-        
-        // Display current API
-        RenderAPI currentAPI = renderingPluginPtr->GetCurrentAPI();
-        std::cout << "Current API: ";
-        switch (currentAPI) {
-            case RenderAPI::OpenGL:
-                std::cout << "OpenGL";
-                break;
-            case RenderAPI::Vulkan:
-                std::cout << "Vulkan";
-                break;
-            case RenderAPI::Direct3D11:
-                std::cout << "Direct3D11";
-                break;
-            case RenderAPI::Direct3D12:
-                std::cout << "Direct3D12";
-                break;
-            case RenderAPI::Metal:
-                std::cout << "Metal";
-                break;
-            default:
-                std::cout << "None";
-                break;
-        }
-        std::cout << std::endl;
-        
-        // Try to create a window
-        if (renderingPluginPtr->IsInitialized()) {
-            std::cout << "Creating window..." << std::endl;
-            
-            WindowDesc windowDesc;
-            windowDesc.title = "RenderingPlugin Example";
-            windowDesc.width = 800;
-            windowDesc.height = 600;
-            windowDesc.fullscreen = false;
-            windowDesc.resizable = true;
-            windowDesc.vsync = true;
-            
-            bool windowCreated = renderingPluginPtr->CreateWindow(windowDesc);
-            int width = 800, height = 600;  // Default values
-            
-            if (windowCreated) {
-                std::cout << "Window created successfully" << std::endl;
-                
-                // Get window size
-                if (renderingPluginPtr->GetWindowSize(width, height)) {
-                    std::cout << "Window size: " << width << "x" << height << std::endl;
-                }
-                
-                // macOS特定的窗口显示优化
-                std::cout << "正在优化窗口显示..." << std::endl;
-                
-                // 给窗口系统一些时间来完成窗口创建
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                
-                // 处理初始事件以确保窗口正确显示
-                for (int i = 0; i < 10; ++i) {
-                    renderingPluginPtr->PollEvents();
-                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-                }
-                
-                // 额外的macOS窗口焦点优化
-                std::cout << "应用macOS窗口焦点优化..." << std::endl;
-                
-                // 多次事件处理以确保窗口完全初始化
-                for (int i = 0; i < 5; ++i) {
-                    renderingPluginPtr->PollEvents();
-                    
-                    // 验证窗口大小以确保窗口仍然有效
-                    int checkWidth, checkHeight;
-                    if (renderingPluginPtr->GetWindowSize(checkWidth, checkHeight)) {
-                        if (i == 0) {
-                            std::cout << "窗口验证成功，大小: " << checkWidth << "x" << checkHeight << std::endl;
-                        }
-                    } else {
-                        std::cout << "警告: 窗口验证失败" << std::endl;
-                        break;
-                    }
-                    
-                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-                }
-                
-                std::cout << "✓ 窗口应该已经显示在屏幕上并获得焦点" << std::endl;
-                std::cout << "如果窗口没有显示，请检查Dock或任务栏" << std::endl;
-                
-                // === Basic Rendering Setup ===
-                std::cout << "Setting up basic rendering..." << std::endl;
-                
-                std::cout << "✓ Basic rendering setup completed" << std::endl;
-            } else {
-                std::cout << "Window creation failed - running in simulation mode (" << width << "x" << height << ")" << std::endl;
-            }
-            
-            // 简化的渲染设置，不直接使用LLGL类型
-            bool renderingSetupSuccess = true;
-            
-            // Start rendering loop
-            {
-                std::cout << "\n=== Starting render loop ===" << std::endl;
-                if (windowCreated) {
-                    std::cout << "Press ESC or close window to exit" << std::endl;
-                } else {
-                    std::cout << "Simulation mode - will auto-exit after 10 seconds" << std::endl;
-                }
-                
-                // 优化的渲染循环
-                int frame = 0;
-                bool shouldExit = false;
-                auto startTime = std::chrono::steady_clock::now();
-                auto lastFrameTime = startTime;
-                const auto targetFrameTime = std::chrono::microseconds(16667); // 60 FPS
-                
-                while (!shouldExit) {
-                    auto frameStartTime = std::chrono::steady_clock::now();
-                    
-                    // Event handling
-                    renderingPluginPtr->PollEvents();
-                    
-                    // Exit condition check
-                    if (windowCreated) {
-                        if (renderingPluginPtr->ShouldWindowClose()) {
-                            shouldExit = true;
-                            break;
-                        }
-                    } else {
-                        // Simulation mode: time limit
-                        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(frameStartTime - startTime).count();
-                        if (elapsed > 10) {
-                            shouldExit = true;
-                            break;
-                        }
-                    }
-                    
-                    // Begin frame
-                    bool frameBegun = renderingPluginPtr->BeginFrame();
-                    if (!frameBegun && frame == 0) {
-                        std::cout << "Note: Running in headless mode" << std::endl;
-                    }
-                    
-                    // Animated background color
-                    float time = frame * 0.016f;
-                    float r = (std::sin(time) + 1.0f) * 0.5f;
-                    float g = (std::sin(time + 2.0f) + 1.0f) * 0.5f;
-                    float b = (std::sin(time + 4.0f) + 1.0f) * 0.5f;
-                    
-                    // Progress output (every 5 seconds)
-                    if (frame % 300 == 0 && frame > 0) {
-                        std::cout << "Frame " << frame << " - Rendering..." << std::endl;
-                    }
-                    
-                    Color clearColor(r, g, b, 1.0f);
-                    renderingPluginPtr->Clear(clearColor);
-                    
-                    // Set viewport
-                    int viewportWidth = windowCreated ? width : 800;
-                    int viewportHeight = windowCreated ? height : 600;
-                    renderingPluginPtr->SetViewport(0, 0, viewportWidth, viewportHeight);
-                    
-                    // Basic rendering operations using RenderingPlugin interface
-                    if (renderingSetupSuccess) {
-                        // 使用RenderingPlugin提供的基本渲染功能
-                        // 这里可以添加简单的渲染操作，如绘制基本图形
-                        // 但不直接使用LLGL类型
-                    }
-                    
-                    // End frame
-                    renderingPluginPtr->EndFrame();
-                    
-                    // Frame rate control
-                    auto frameEndTime = std::chrono::steady_clock::now();
-                    auto frameDuration = frameEndTime - frameStartTime;
-                    
-                    if (windowCreated) {
-                        if (frameDuration < targetFrameTime) {
-                            std::this_thread::sleep_for(targetFrameTime - frameDuration);
-                        }
-                    } else {
-                        // Lower frame rate for simulation mode
-                        const auto lowFrameTime = std::chrono::milliseconds(100);
-                        if (frameDuration < lowFrameTime) {
-                            std::this_thread::sleep_for(lowFrameTime - frameDuration);
-                        }
-                    }
-                    
-                    lastFrameTime = frameStartTime;
-                    frame++;
-                }
-                
-                std::cout << "\n=== Render loop ended ===" << std::endl;
-                std::cout << "Total frames rendered: " << frame << std::endl;
-            }
-            
-            // Clean up rendering resources
-            std::cout << "Cleaning up rendering resources..." << std::endl;
-        }
-        
-        // Shutdown will be called automatically when plugin is unloaded
-        std::cout << "Shutting down..." << std::endl;
-        
-        // Clear singleton instance before unloading
-        RenderingPlugin::SetInstance(nullptr);
-        
-        // Unload plugins (this will call Shutdown automatically)
-        pluginManager.UnloadAllPlugins();
-        
-        std::cout << "Example completed successfully" << std::endl;
-        
-        // Exit immediately to avoid potential issues with global destructors
-        std::exit(0);
-        
-    } catch (const std::exception& e) {
+        std::cout << "Rendering example completed successfully" << std::endl;
+    }
+    catch (const std::exception& e) {
         std::cerr << "Exception occurred: " << e.what() << std::endl;
-        std::exit(-1);
-    } catch (...) {
+        return -1;
+    }
+    catch (...) {
         std::cerr << "Unknown exception occurred" << std::endl;
-        std::exit(-1);
+        return -1;
     }
     
     return 0;
