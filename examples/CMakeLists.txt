@@ -7,12 +7,15 @@ add_executable(rendering_example rendering_example.cpp)
 target_include_directories(rendering_example PRIVATE
     ${CMAKE_SOURCE_DIR}/src/PluginCore/include
     ${CMAKE_SOURCE_DIR}/src/Plugins/RenderingPlugin/include
+    $<TARGET_PROPERTY:LLGL,INTERFACE_INCLUDE_DIRECTORIES>
+    ${gauss_SOURCE_DIR}/include
 )
 
 # Link libraries
 target_link_libraries(rendering_example PRIVATE
     PluginCore
     LLGLRenderingPlugin
+    gausslib
 )
 
 # Set output directory

@@ -123,7 +123,7 @@ target_include_directories(RenderingPluginComponents
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
         $<TARGET_PROPERTY:LLGL,INTERFACE_INCLUDE_DIRECTORIES>
-        $<TARGET_PROPERTY:gausslib,INTERFACE_INCLUDE_DIRECTORIES>
+        ${gauss_SOURCE_DIR}/include
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
