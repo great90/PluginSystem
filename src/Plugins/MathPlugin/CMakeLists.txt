@@ -1,5 +1,18 @@
 # src/Plugins/MathPlugin/CMakeLists.txt
 
+# Support standalone build
+if(NOT TARGET PluginCore)
+    cmake_minimum_required(VERSION 3.16)
+    project(MathPlugin VERSION 1.0.0 LANGUAGES CXX)
+    
+    # Set C++ standard
+    set(CMAKE_CXX_STANDARD 17)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    
+    # Find PluginCore
+    find_package(PluginCore REQUIRED)
+endif()
+
 # Download and build Realtime Math (RTM) from GitHub
 include(FetchContent)
 FetchContent_Declare(

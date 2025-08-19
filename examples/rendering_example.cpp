@@ -5,7 +5,7 @@
  * 使用RenderingPlugin接口进行渲染，支持鼠标交互旋转立方体
  */
 
-#include "../include/Plugin.h"
+#include "../src/Plugins/RenderingPlugin/include/RenderingPluginBase.h"
 #include <iostream>
 #include <memory>
 #include <chrono>

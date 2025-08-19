@@ -34,12 +34,12 @@ target_include_directories(PythonPlugin
         ${rtm_SOURCE_DIR}/includes
 )
 
-# Link dependencies
+# Link dependencies - PythonPlugin is an implementation of ScriptPlugin interface
 target_link_libraries(PythonPlugin PRIVATE 
     PluginCore
-    ScriptPlugin
     MathPlugin
     ${PYTHON_LIBRARIES}
+    PUBLIC ScriptPlugin  # Link to ScriptPlugin interface
 )
 
 # Add dependency to ensure python_lib is built before PythonPlugin

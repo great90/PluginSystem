@@ -29,12 +29,14 @@ target_include_directories(${TARGET_NAME}
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-# Link libraries
+# Link libraries - LLGLRenderingPlugin is an implementation of RenderingPlugin interface
 target_link_libraries(${TARGET_NAME}
     PRIVATE
         PluginCore
         LLGL
         RenderingPluginComponents
+    PUBLIC
+        RenderingPlugin  # Link to RenderingPlugin interface
 )
 
 # Compiler definitions

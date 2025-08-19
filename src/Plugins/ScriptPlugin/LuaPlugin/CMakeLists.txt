@@ -36,12 +36,12 @@ target_include_directories(LuaPlugin
 # Add dependency to ensure lua_lib is built before LuaPlugin
 add_dependencies(LuaPlugin lua_lib)
 
-# Link dependencies
+# Link dependencies - LuaPlugin is an implementation of ScriptPlugin interface
 target_link_libraries(LuaPlugin PRIVATE 
     PluginCore
-    ScriptPlugin
     MathPlugin
     lua_lib
+    PUBLIC ScriptPlugin  # Link to ScriptPlugin interface
 )
 
 # Installation rules

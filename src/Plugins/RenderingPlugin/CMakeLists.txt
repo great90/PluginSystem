@@ -1,5 +1,18 @@
 # src/Plugins/RenderingPlugin/CMakeLists.txt
 
+# Support standalone build
+if(NOT TARGET PluginCore)
+    cmake_minimum_required(VERSION 3.16)
+    project(RenderingPlugin VERSION 1.0.0 LANGUAGES CXX)
+    
+    # Set C++ standard
+    set(CMAKE_CXX_STANDARD 17)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    
+    # Find PluginCore
+    find_package(PluginCore REQUIRED)
+endif()
+
 # Download and build LLGL from GitHub
 include(FetchContent)
 FetchContent_Declare(
@@ -146,15 +159,30 @@ message(STATUS "About to add LLGLRenderingPlugin subdirectory")
 add_subdirectory(LLGLRenderingPlugin)
 message(STATUS "Finished adding LLGLRenderingPlugin subdirectory")
 
-# Create an interface library for the abstract base
+# Create the main RenderingPlugin as an INTERFACE library
+add_library(RenderingPlugin INTERFACE)
+target_include_directories(RenderingPlugin INTERFACE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+    ${gauss_SOURCE_DIR}/include
+)
+
+# Link PluginCore and gausslib interface to RenderingPlugin interface
+# gausslib is needed because RenderingPluginBase.h includes Gauss/Matrix.h
+target_link_libraries(RenderingPlugin INTERFACE 
+    PluginCore
+    gausslib
+)
+
+# Create an interface library for the abstract base (for backward compatibility)
 add_library(RenderingPluginBase INTERFACE)
 target_include_directories(RenderingPluginBase INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
 
-# For backward compatibility, create an alias that points to LLGLRenderingPlugin
-add_library(RenderingPlugin ALIAS LLGLRenderingPlugin)
+# RenderingPluginBase inherits from RenderingPlugin interface
+target_link_libraries(RenderingPluginBase INTERFACE RenderingPlugin)
 
 # 在Debug模式下添加调试符号
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")

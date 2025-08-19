@@ -14,6 +14,7 @@ target_include_directories(rendering_example PRIVATE
 # Link libraries
 target_link_libraries(rendering_example PRIVATE
     PluginCore
+    RenderingPlugin
     LLGLRenderingPlugin
     gausslib
 )

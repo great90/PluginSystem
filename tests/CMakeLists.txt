@@ -45,9 +45,19 @@ target_include_directories(manual_test PRIVATE
     ${rtm_SOURCE_DIR}/includes
 )
 
+# Get built plugins from global property
+get_property(BUILT_PLUGINS GLOBAL PROPERTY BUILT_PLUGINS)
+
+# Create plugin link list
+set(PLUGIN_LINK_LIBS PluginCore)
+foreach(PLUGIN ${BUILT_PLUGINS})
+    list(APPEND PLUGIN_LINK_LIBS ${PLUGIN})
+endforeach()
+
 # Link dependencies for manual test
 target_link_libraries(manual_test PRIVATE
-    PluginCore
+    ${PLUGIN_LINK_LIBS}
+    ${CMAKE_DL_LIBS}
 )
 
 # Set output directory for manual test
@@ -67,7 +77,7 @@ add_custom_command(TARGET manual_test POST_BUILD
         "$<TARGET_FILE:LogPlugin>"
         "$<TARGET_FILE:MathPlugin>"
         # "$<TARGET_FILE:RenderingPlugin>"  # Temporarily disabled
-        "$<TARGET_FILE:ScriptPlugin>"
+        # "$<TARGET_FILE:ScriptPlugin>"  # ScriptPlugin is now INTERFACE library
         "$<TARGET_FILE:PythonPlugin>"
         "$<TARGET_FILE:LuaPlugin>"
         "${CMAKE_BINARY_DIR}/bin/plugins/"
@@ -92,13 +102,8 @@ target_include_directories(PluginSystemTests PRIVATE
 
 # Link dependencies
 target_link_libraries(PluginSystemTests PRIVATE
-    PluginCore
-    MathPlugin
-    LogPlugin
-    # RenderingPlugin  # Temporarily disabled
-    ScriptPlugin
-    PythonPlugin
-    LuaPlugin
+    ${PLUGIN_LINK_LIBS}
+    ${CMAKE_DL_LIBS}
     gtest
     gtest_main
 )
@@ -117,7 +122,7 @@ add_custom_command(TARGET PluginSystemTests POST_BUILD
         "$<TARGET_FILE:LogPlugin>"
         "$<TARGET_FILE:MathPlugin>"
         # "$<TARGET_FILE:RenderingPlugin>"  # Temporarily disabled
-        "$<TARGET_FILE:ScriptPlugin>"
+        # "$<TARGET_FILE:ScriptPlugin>"  # ScriptPlugin is now INTERFACE library
         "$<TARGET_FILE:PythonPlugin>"
         "$<TARGET_FILE:LuaPlugin>"
         "${CMAKE_BINARY_DIR}/bin/plugins/"
